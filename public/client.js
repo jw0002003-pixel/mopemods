@@ -18,7 +18,6 @@ window.addEventListener('resize', () => {
 
 function lerp(a, b, t) { return a + (b - a) * t; }
 
-// === ОПРЕДЕЛЯЕМ МОБИЛЬНОЕ УСТРОЙСТВО СРАЗУ ===
 const isMobile = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0) || /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
 
 let myId = null;
@@ -150,7 +149,6 @@ function showNotification(text) {
   setTimeout(() => div.remove(), 3000);
 }
 
-// === КЛАВИШИ ===
 document.addEventListener('keydown', (e) => {
   if (chatOpen) return;
   if (myId && players[myId] && players[myId].dead) return;
@@ -170,19 +168,16 @@ document.addEventListener('keydown', (e) => {
     if (myId && players[myId] && players[myId].level === 6) ws.send(JSON.stringify({ type: 'ascend' }));
   }
 
-  // 👑 АДМИН: стрелка ВВЕРХ — уровень +1
   if (e.key === 'ArrowUp' && isAdmin && gameStarted) {
     e.preventDefault();
     ws.send(JSON.stringify({ type: 'admin_level', delta: 1 }));
   }
-  // 👑 АДМИН: стрелка ВНИЗ — уровень -1
   if (e.key === 'ArrowDown' && isAdmin && gameStarted) {
     e.preventDefault();
     ws.send(JSON.stringify({ type: 'admin_level', delta: -1 }));
   }
 });
 
-// === УПРАВЛЕНИЕ МЫШЬЮ (только ПК) ===
 setInterval(() => {
   if (!gameStarted || !myId || !players[myId]) return;
   if (isMobile) return;
@@ -253,9 +248,6 @@ chatInput.addEventListener('keydown', (e) => {
   }
 });
 
-// ============================
-//          ОТРИСОВКА
-// ============================
 function draw() {
   ctx.fillStyle = '#0a0a1a';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -314,13 +306,11 @@ function draw() {
   ctx.save();
   ctx.scale(camera.zoom, camera.zoom);
 
-  // === БИОМЫ ===
   for (const b of biomes) {
     ctx.fillStyle = b.color;
     ctx.fillRect(b.x - camera.x, b.y - camera.y, b.w, b.h);
   }
 
-  // === ВУЛКАН ===
   const vx = volcano.x - camera.x;
   const vy = volcano.y - camera.y;
   ctx.beginPath(); ctx.arc(vx, vy, volcano.r, 0, Math.PI * 2);
@@ -344,7 +334,6 @@ function draw() {
     ctx.fillStyle = 'rgba(255, 200, 0, 0.6)'; ctx.fill();
   }
 
-  // === АРЕНА ===
   if (arena.active) {
     const ax = arena.x - camera.x;
     const ay = arena.y - camera.y;
@@ -362,7 +351,6 @@ function draw() {
   ctx.strokeStyle = '#fff'; ctx.lineWidth = 4;
   ctx.strokeRect(-camera.x, -camera.y, world.width, world.height);
 
-  // === ДЕРЕВЬЯ (лес) ===
   for (const tr of trees) {
     const tx = tr.x - camera.x;
     const ty = tr.y - camera.y;
@@ -382,7 +370,6 @@ function draw() {
     ctx.fill();
   }
 
-  // === НОРЫ ===
   for (const h of holes) {
     const hx = h.x - camera.x, hy = h.y - camera.y;
     const grad = ctx.createRadialGradient(hx, hy, h.r * 0.4, hx, hy, h.r * 1.5);
@@ -405,7 +392,6 @@ function draw() {
     ctx.beginPath(); ctx.arc(hx, hy, h.r * 0.8, 0, Math.PI * 2); ctx.stroke();
   }
 
-  // === КРИСТАЛЛЫ ===
   for (const c of crystals) {
     if (c.hp <= 0) continue;
     const cx = c.x - camera.x, cy = c.y - camera.y;
@@ -446,7 +432,6 @@ function draw() {
     ctx.fillRect(cx - w / 2, barY, w * (c.hp / c.maxHp), h);
   }
 
-  // === ЕДА ===
   for (const f of food) {
     const fx = f.x - camera.x, fy = f.y - camera.y;
     ctx.fillStyle = 'rgba(0,0,0,0.3)';
@@ -466,7 +451,6 @@ function draw() {
     ctx.fillText(f.emoji || '🍓', fx, fy + 1);
   }
 
-  // === МЯСО ===
   for (const m of meat) {
     const mx = m.x - camera.x;
     const my = m.y - camera.y;
@@ -488,14 +472,12 @@ function draw() {
     ctx.fillText('🍖', mx, my + 1);
   }
 
-  // === ПОДАРКИ ===
   for (const pr of presents) {
     ctx.font = '40px serif';
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillText('🎁', pr.x - camera.x, pr.y - camera.y);
   }
 
-  // === ОГНЕННЫЕ ШАРЫ ===
   for (const fb of fireballs) {
     const fx = fb.x - camera.x, fy = fb.y - camera.y;
     const glow = ctx.createRadialGradient(fx, fy, 0, fx, fy, fb.r * 2);
@@ -508,13 +490,35 @@ function draw() {
     ctx.fillStyle = '#ff6600'; ctx.fill();
   }
 
-  // === ИГРОКИ ===
   const sorted = Object.values(players).sort((a, b) => b.score - a.score);
   for (const p of sorted) {
     if (p.dead) continue;
     const x = (p.renderX !== undefined ? p.renderX : p.x) - camera.x;
     const y = (p.renderY !== undefined ? p.renderY : p.y) - camera.y;
     if (p.hidden && p.id != myId) continue;
+
+    // ✨ АУРА
+    if (p.auraColor && p.auraUntil && Date.now() < p.auraUntil) {
+      const remain = p.auraUntil - Date.now();
+      const alpha = Math.min(1, remain / 500);
+      const pulse = 1 + Math.sin(Date.now() / 100) * 0.15;
+      const auraR = p.r * 2.5 * pulse;
+
+      const gradient = ctx.createRadialGradient(x, y, p.r * 0.5, x, y, auraR);
+      if (p.auraColor === 'orange') {
+        gradient.addColorStop(0, `rgba(255, 150, 50, ${0.7 * alpha})`);
+        gradient.addColorStop(0.5, `rgba(255, 100, 0, ${0.4 * alpha})`);
+        gradient.addColorStop(1, `rgba(255, 50, 0, 0)`);
+      } else {
+        gradient.addColorStop(0, `rgba(100, 200, 255, ${0.7 * alpha})`);
+        gradient.addColorStop(0.5, `rgba(50, 150, 255, ${0.4 * alpha})`);
+        gradient.addColorStop(1, `rgba(0, 100, 255, 0)`);
+      }
+      ctx.fillStyle = gradient;
+      ctx.beginPath();
+      ctx.arc(x, y, auraR, 0, Math.PI * 2);
+      ctx.fill();
+    }
 
     if (p.hidden && p.id == myId) {
       ctx.globalAlpha = 0.5;
@@ -532,28 +536,22 @@ function draw() {
     if (p.isSanta) drawSkin(ctx, x, y, skinSize, 'santa', p.renderAngle !== undefined ? p.renderAngle : p.angle);
     else drawSkin(ctx, x, y, skinSize, p.level, p.renderAngle !== undefined ? p.renderAngle : p.angle);
 
-    // 🐾 Анимация удара лапой медведя
     if (p.level === 5 && p.swingActive) {
       const PR = Math.max(0.1, Math.abs(p.r || 1));
       const angle = p.renderAngle !== undefined ? p.renderAngle : (p.angle || 0);
-
       const DURATION = 150;
       const elapsed = Date.now() - (p.swingTime || 0);
       const t = Math.max(0, Math.min(1, elapsed / DURATION));
-
       const side = p.nextPawSide || 'left';
       const sideMul = side === 'left' ? -1 : 1;
-
       const pawAngle = angle + sideMul * (Math.PI / 3.2);
       const reach = PR * (0.9 + t * 0.7);
       const alpha = t < 0.7 ? 1 : 1 - (t - 0.7) / 0.3;
-
       const pawX = x + Math.cos(pawAngle) * reach;
       const pawY = y + Math.sin(pawAngle) * reach;
 
       ctx.save();
       ctx.globalAlpha = alpha;
-
       if (t < 0.5) {
         const waveProgress = t / 0.5;
         const waveR = PR * (0.6 + waveProgress * 1.2);
@@ -563,15 +561,12 @@ function draw() {
         ctx.lineWidth = 5 * (1 - waveProgress);
         ctx.stroke();
       }
-
       ctx.translate(pawX, pawY);
       ctx.rotate(pawAngle);
-
       ctx.beginPath();
       ctx.arc(3, 3, PR * 0.6, 0, Math.PI * 2);
       ctx.fillStyle = 'rgba(0,0,0,0.35)';
       ctx.fill();
-
       ctx.beginPath();
       ctx.arc(0, 0, PR * 0.6, 0, Math.PI * 2);
       ctx.fillStyle = '#6f4e37';
@@ -579,7 +574,6 @@ function draw() {
       ctx.strokeStyle = '#3d2a1a';
       ctx.lineWidth = 4;
       ctx.stroke();
-
       for (let c = -1; c <= 1; c++) {
         ctx.beginPath();
         ctx.arc(PR * 0.42, c * PR * 0.3, PR * 0.13, 0, Math.PI * 2);
@@ -589,11 +583,9 @@ function draw() {
         ctx.lineWidth = 2;
         ctx.stroke();
       }
-
       ctx.restore();
     }
 
-    // === ИМЯ ===
     ctx.font = 'bold 14px sans-serif';
     ctx.textAlign = 'center';
     ctx.strokeStyle = '#000';
@@ -615,7 +607,6 @@ function draw() {
       ctx.fillText(p.name, x, y - p.r - 24);
     }
 
-    // === HP ===
     if (p.hp !== undefined && p.maxHp !== undefined) {
       const barWidth = p.r * 2, barHeight = 5;
       const barX = x - barWidth / 2, barY = y - p.r - 18;
@@ -629,7 +620,6 @@ function draw() {
       ctx.strokeRect(barX, barY, barWidth, barHeight);
     }
 
-    // === ЧАТ ===
     if (p.chatText) {
       const tx = x, ty = y - p.r - 45;
       ctx.font = 'bold 16px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
@@ -646,7 +636,6 @@ function draw() {
 
   ctx.restore();
 
-  // === HUD ===
   if (myId && players[myId] && !players[myId].dead && !spectating) {
     const p = players[myId];
     const animalNames = ['Мышка', 'Кролик', 'Лиса', 'Волк', 'Медведь', 'Дракон', 'Король Драконов'];
@@ -673,13 +662,11 @@ function draw() {
     ctx.fillText(`👁 SPECTATOR: ${spectateTarget.name}`, canvas.width / 2, 40);
   }
 
-  // === LEADERBOARD ===
   leaderboard.innerHTML = '<b>Топ:</b><br>' +
     sorted.slice(0, 5).map((p, i) =>
       `${i + 1}. ${p.isSanta ? '🎅' : ''} ${p.name} — ${p.score}`
     ).join('<br>');
 
-  // === МИНИКАРТА ===
   mmCtx.clearRect(0, 0, 160, 160);
   for (const b of biomes) {
     mmCtx.fillStyle = b.color;
@@ -714,7 +701,6 @@ function draw() {
   requestAnimationFrame(draw);
 }
 
-// === МОБИЛЬНОЕ УПРАВЛЕНИЕ ===
 function showMobileControls() {
   if (isMobile) {
     document.getElementById('joystick').style.display = 'block';
