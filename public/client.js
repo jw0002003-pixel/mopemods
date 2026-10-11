@@ -169,7 +169,7 @@ document.addEventListener('keydown', (e) => {
     if (myId && players[myId] && players[myId].isSanta) ws.send(JSON.stringify({ type: 'santa_gift' }));
   }
   if (e.key === 'w' || e.key === 'W' || e.key === 'ц') {
-    if (myId && players[myId] && gameStarted) {
+    if (myId && players[myId] && gameStarted && !e.repeat) {
       const me = players[myId];
       if (me.level >= 6 || me.isSanta) return;
       ws.send(JSON.stringify({ type: 'dive' }));
