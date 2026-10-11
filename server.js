@@ -612,8 +612,9 @@ setInterval(() => {
         p.holeState = 'inside';
         p.hidden = true;
         p.vx = 0; p.vy = 0;
-        // 🚫 Сброс интерполяции для устранения фриза
+        // 🚫 Отправляем сигнал 3 раза — гарантирует, что клиент успеет
         p.skipInterpolation = true;
+        p.skipInterpolationFrames = 3;
       } else {
         p.x += (dx / dist) * step;
         p.y += (dy / dist) * step;
