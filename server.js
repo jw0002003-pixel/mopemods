@@ -1117,3 +1117,4 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log(`🗺 Карта: ${WORLD.width}x${WORLD.height}`);
   console.log(`🕳 Механика норы: плавный вход/выход (вариант A)`);
 });
+// redeploy v2
