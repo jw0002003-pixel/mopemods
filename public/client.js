@@ -477,47 +477,58 @@ camera.y = focusY - viewH / 2;
     if (p.isSanta) drawSkin(ctx, x, y, skinSize, 'santa', p.renderAngle !== undefined ? p.renderAngle : p.angle);
     else drawSkin(ctx, x, y, skinSize, p.level, p.renderAngle !== undefined ? p.renderAngle : p.angle);
 
-    // Анимация удара лапой (для медведя) — БЕЗОПАСНАЯ
-    const swingElapsed = Date.now() - (p.swingTime || 0);
-if (p.swingActive && p.level === 5 && swingElapsed < 400) {
-      const PR = Math.max(0.1, Math.abs(p.r || 1));  // защита от NaN и минуса
+// Анимация удара лапой (для медведя) — ДВЕ ЛАПЫ ПО БОКАМ
+const swingElapsed = Date.now() - (p.swingTime || 0);
+if (p.level === 5 && swingElapsed < 300) {
+  const PR = Math.max(0.1, Math.abs(p.r || 1));
 
-      const swingDuration = 300;
-      const elapsed = Date.now() - (p.swingTime || 0);
-      const t = Math.min(1, elapsed / swingDuration);
-      const progress = t < 0.5 ? t * 2 : (1 - t) * 2;
-      const angle = (p.renderAngle !== undefined ? p.renderAngle : (p.angle || 0)) - Math.PI / 2;
-      const reach = PR * 0.6 + progress * PR * 2.5;
+  const swingDuration = 300;
+  const t = Math.min(1, swingElapsed / swingDuration);
+  const progress = t < 0.5 ? t * 2 : (1 - t) * 2;
 
-      const pawX = x + Math.cos(angle) * reach;
-      const pawY = y + Math.sin(angle) * reach;
+  // Угол носа (куда смотрит медведь)
+  const angle = p.renderAngle !== undefined ? p.renderAngle : (p.angle || 0);
 
-      ctx.save();
-      ctx.translate(pawX, pawY);
-      ctx.rotate(angle);
+  // Углы для двух лап: -60° и +60° от носа
+  const leftAngle = angle - Math.PI / 3;
+  const rightAngle = angle + Math.PI / 3;
 
+  // Расстояние от центра до лапы
+  const reach = PR * 0.8 + progress * PR * 1.5;
+
+  // Рисуем ДВЕ лапы
+  for (const pawAngle of [leftAngle, rightAngle]) {
+    const pawX = x + Math.cos(pawAngle) * reach;
+    const pawY = y + Math.sin(pawAngle) * reach;
+
+    ctx.save();
+    ctx.translate(pawX, pawY);
+    ctx.rotate(pawAngle);
+
+    ctx.beginPath();
+    ctx.arc(0, 0, PR * 0.6, 0, Math.PI * 2);
+    ctx.fillStyle = '#6f4e37';
+    ctx.fill();
+    ctx.strokeStyle = '#3d2a1a';
+    ctx.lineWidth = 4;
+    ctx.stroke();
+
+    for (let c = -1; c <= 1; c++) {
       ctx.beginPath();
-      ctx.arc(0, 0, PR * 0.7, 0, Math.PI * 2);
-      ctx.fillStyle = '#6f4e37';
+      ctx.arc(PR * 0.4, c * PR * 0.3, PR * 0.12, 0, Math.PI * 2);
+      ctx.fillStyle = '#fff';
       ctx.fill();
-      ctx.strokeStyle = '#3d2a1a';
-      ctx.lineWidth = 4;
-      ctx.stroke();
-
-      for (let c = -1; c <= 1; c++) {
-        ctx.beginPath();
-        ctx.arc(PR * 0.5, c * PR * 0.35, PR * 0.15, 0, Math.PI * 2);
-        ctx.fillStyle = '#fff';
-        ctx.fill();
-      }
-      ctx.restore();
-
-      ctx.beginPath();
-      ctx.arc(x, y, Math.max(0.1, reach), angle - Math.PI / 3, angle + Math.PI / 3);
-      ctx.strokeStyle = 'rgba(255, 200, 100, 0.5)';
-      ctx.lineWidth = 6;
-      ctx.stroke();
     }
+    ctx.restore();
+  }
+
+  // След удара (полукруг спереди)
+  ctx.beginPath();
+  ctx.arc(x, y, Math.max(0.1, reach + PR * 0.4), angle - Math.PI / 2, angle + Math.PI / 2);
+  ctx.strokeStyle = `rgba(255, 200, 100, ${progress * 0.5})`;
+  ctx.lineWidth = 6;
+  ctx.stroke();
+}
 
     ctx.font = 'bold 14px sans-serif';
     ctx.textAlign = 'center';
