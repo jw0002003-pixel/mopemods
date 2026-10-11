@@ -629,13 +629,21 @@ setInterval(() => {
       p.y = p.holeTargetY;
       p.vx = 0; p.vy = 0;
 
-      // Если игрок двигает курсор — пытается выйти
       const dirX = p.moveDirX || 0;
       const dirY = p.moveDirY || 0;
       const dirDist = Math.hypot(dirX, dirY);
 
+      // 🎯 Поворот в сторону курсора (даже в норе)
+      if (dirDist > 0.01) {
+        const targetAngle = Math.atan2(dirY, dirX);
+        let diff = targetAngle - p.angle;
+        while (diff > Math.PI) diff -= Math.PI * 2;
+        while (diff < -Math.PI) diff += Math.PI * 2;
+        p.angle += diff * 0.25; // плавный поворот
+      }
+
+      // Если игрок двигает курсор — пытается выйти
       if (dirDist > 0.15 && p.movePower > 0.1) {
-        // Начинаем выход в сторону движения
         p.holeState = 'exiting';
       }
       continue;
