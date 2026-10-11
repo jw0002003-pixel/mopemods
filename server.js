@@ -665,6 +665,10 @@ setInterval(() => {
 
       const nx = dirX / dirDist;
       const ny = dirY / dirDist;
+
+      // 🎯 Поворот в сторону выхода
+      p.angle = Math.atan2(ny, nx);
+
       const step = HOLE_EXIT_SPEED / TICK_RATE;
 
       // Смещаемся к краю норы
@@ -674,6 +678,29 @@ setInterval(() => {
       p.hidden = true;
       p.vx = 0; p.vy = 0;
 
+      // Проверяем — вышли ли за границу норы
+      const hole = holes.find(h => h.id === p.inHole);
+      if (hole) {
+        const distFromCenter = Math.hypot(p.x - hole.x, p.y - hole.y);
+        if (distFromCenter >= hole.r * 0.85) {
+          // Выходим наружу — ставим за краем норы
+          p.x = hole.x + nx * (hole.r + p.r * 0.3);
+          p.y = hole.y + ny * (hole.r + p.r * 0.3);
+          p.holeState = 'outside';
+          p.hidden = false;
+          p.inHole = null;
+          p.holeCooldown = Date.now() + 800;
+          p.vx = nx * 3;
+          p.vy = ny * 3;
+        }
+      } else {
+        // Норы нет — выходим
+        p.holeState = 'outside';
+        p.hidden = false;
+        p.inHole = null;
+      }
+      continue;
+    }
       // Проверяем — вышли ли за границу норы
       const hole = holes.find(h => h.id === p.inHole);
       if (hole) {
