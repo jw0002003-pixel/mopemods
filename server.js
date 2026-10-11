@@ -602,24 +602,43 @@ setInterval(() => {
     const p = players[id];
     if (p.dead) continue;
 
-    // 🕳 СОСТОЯНИЕ «ЗАХОД» — плавно в центр норы
-    if (p.holeState === 'entering') {
-      const dx = p.holeTargetX - p.x;
-      const dy = p.holeTargetY - p.y;
-      const dist = Math.hypot(dx, dy);
-      const step = HOLE_ENTER_SPEED / TICK_RATE;
+     // 🕳 СОСТОЯНИЕ «В НОРЕ» — плавное движение внутри, поворот к курсору
+    if (p.holeState === 'inside') {
+      p.hidden = true;
+      p.vx = 0; p.vy = 0;
 
-      if (dist <= step) {
-        p.x = p.holeTargetX;
-        p.y = p.holeTargetY;
-        p.holeState = 'inside';
-        p.hidden = true;
-        p.vx = 0; p.vy = 0;
-      } else {
-        p.x += (dx / dist) * step;
-        p.y += (dy / dist) * step;
-        // 🎯 Смотрим куда едем (в центр норы)
-        p.angle = Math.atan2(dy, dx);
+      const dirX = p.moveDirX || 0;
+      const dirY = p.moveDirY || 0;
+      const dirDist = Math.hypot(dirX, dirY);
+
+      // 🎯 Поворот в сторону курсора
+      if (dirDist > 0.01) {
+        const targetAngle = Math.atan2(dirY, dirX);
+        let diff = targetAngle - p.angle;
+        while (diff > Math.PI) diff -= Math.PI * 2;
+        while (diff < -Math.PI) diff += Math.PI * 2;
+        p.angle += diff * 0.25;
+      }
+
+      // 🚪 Двигаемся к краю норы (не телепорт!)
+      if (dirDist > 0.15 && p.movePower > 0.1) {
+        const nx = dirX / dirDist;
+        const ny = dirY / dirDist;
+        const step = HOLE_EXIT_SPEED / TICK_RATE;
+
+        const newX = p.x + nx * step;
+        const newY = p.y + ny * step;
+
+        const hole = holes.find(h => h.id === p.inHole);
+        if (hole) {
+          const distFromCenter = Math.hypot(newX - hole.x, newY - hole.y);
+          if (distFromCenter < hole.r * 0.85) {
+            p.x = newX;
+            p.y = newY;
+          } else {
+            p.holeState = 'exiting';
+          }
+        }
       }
       continue;
     }
