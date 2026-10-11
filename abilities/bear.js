@@ -8,13 +8,13 @@ module.exports = {
     player.swingTime = now;
     player.swingAngle = player.angle || 0;
 
-    // Сторона чередуется
     player.nextPawSide = player.nextPawSide === 'left' ? 'right' : 'left';
     const side = player.nextPawSide;
 
+    // ⏱️ Длительность анимации — синхронизирована с клиентом
     setTimeout(() => {
       if (players[player.id]) players[player.id].swingActive = false;
-    }, 80);
+    }, 150);
 
     const hitRange = 150;
     const hitAngle = Math.PI / 3;
@@ -34,18 +34,22 @@ module.exports = {
       while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
       while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
 
-      // ✅ Урон только в сторону удара (учитываем сторону лапы)
-      const sideOffset = side === 'left' ? -0.5 : 0.5;
-      if (Math.abs(angleDiff - sideOffset) < hitAngle * 0.7 ||
-          Math.abs(angleDiff) < hitAngle) {
-        p.hp -= 60;
+      if (Math.abs(angleDiff) < hitAngle) {
+        p.hp -= player.damage * 2;
         p.stunned = now + 1500;
-        p.x += Math.cos(angleToTarget) * 150;
-        p.y += Math.sin(angleToTarget) * 150;
+
+        p.x = Math.max(p.r, Math.min(world.width - p.r,
+          p.x + Math.cos(angleToTarget) * 150));
+        p.y = Math.max(p.r, Math.min(world.height - p.r,
+          p.y + Math.sin(angleToTarget) * 150));
+
         hitCount++;
       }
     }
 
-    return { ok: true, message: hitCount > 0 ? `🐻 Удар! Попало: ${hitCount}` : '🐻 Удар!' };
+    return {
+      ok: true,
+      message: hitCount > 0 ? `🐻 Удар! Попало: ${hitCount}` : '🐻 Удар!'
+    };
   }
 };
