@@ -893,7 +893,7 @@ setInterval(() => {
       const m = meat[i];
       if (m.hp <= 0) continue;
       const distToMeat = Math.hypot(p.x - m.x, p.y - m.y);
-      const hitDist = (p.level >= 6) ? p.r + m.r * 0.6 : p.r * 0.9 + m.r * 0.7;
+      const hitDist = (p.level >= 6) ? p.r + m.r * 0.6 : p.r * 0.9 + m.r * 0.95;
 
       if (distToMeat < hitDist) {
         const now = Date.now();
