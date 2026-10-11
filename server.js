@@ -47,8 +47,8 @@ function getBiomeAt(x, y) {
   return BIOMES[0];
 }
 
-const HOLE_ENTER_SPEED = 50;
-const HOLE_EXIT_SPEED = 60;
+const HOLE_ENTER_SPEED = 300;
+const HOLE_EXIT_SPEED = 350;
 
 function resolveFoodCollision(p, f) {
   if (p.level >= 6) return false;
