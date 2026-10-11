@@ -1,19 +1,24 @@
 module.exports = {
-  name: 'Рык',
+  name: 'Удар лапой',
   key: 'Q',
-  cooldown: 7000,
+  cooldown: 6000,
   use(player, players, world, helpers) {
+    // Найти ближайшего игрока
+    let nearest = null, minD = Infinity;
     for (const id in players) {
       const p = players[id];
-      if (p.id === player.id || p.dead || p.hidden) continue;
+      if (p.id === player.id || p.dead || p.hidden || p.isSanta) continue;
       const d = Math.hypot(p.x - player.x, p.y - player.y);
-      if (d < 400) {
-        const ang = Math.atan2(p.y - player.y, p.x - player.x);
-        p.x += Math.cos(ang) * 250;
-        p.y += Math.sin(ang) * 250;
-        p.hp -= 15;
-      }
+      if (d < minD) { minD = d; nearest = p; }
     }
-    return { ok: true, message: '🐻 Рык!' };
+    if (nearest && minD < 300) {
+      nearest.hp -= 60;
+      nearest.stunned = Date.now() + 1500;
+      const ang = Math.atan2(nearest.y - player.y, nearest.x - player.x);
+      nearest.x += Math.cos(ang) * 150;
+      nearest.y += Math.sin(ang) * 150;
+      return { ok: true, message: `🐻 Удар! ${nearest.name} получил 60 урона!` };
+    }
+    return { ok: false, message: '❌ Никого рядом' };
   }
 };
