@@ -15,7 +15,7 @@ module.exports = {
 
     // Урон — только в полукруг спереди (радиус 150, угол ±60°)
     const hitRange = 150;
-    const hitAngle = Math.PI / 3; // 60°
+    const hitAngle = Math.PI / 3;
     let hitCount = 0;
 
     for (const id in players) {
@@ -26,13 +26,11 @@ module.exports = {
       const dist = Math.hypot(dx, dy);
       if (dist > hitRange + p.r) continue;
 
-      // Угол между направлением удара и целью
       const angleToTarget = Math.atan2(dy, dx);
       let angleDiff = angleToTarget - player.angle;
       while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
       while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
 
-      // Если цель в полукруге спереди
       if (Math.abs(angleDiff) < hitAngle) {
         p.hp -= 60;
         p.stunned = Date.now() + 1500;
@@ -46,6 +44,6 @@ module.exports = {
     if (hitCount > 0) {
       return { ok: true, message: `🐻 Удар! Попало: ${hitCount}` };
     }
-    return { ok: true, message: '🐻 Удар!' };  // всё равно бьёт
+    return { ok: true, message: '🐻 Удар!' };
   }
 };
