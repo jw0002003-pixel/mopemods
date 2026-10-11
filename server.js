@@ -16,7 +16,7 @@ const FOOD_COUNT = 500;
 const HOLE_COUNT = 60;
 const CRYSTAL_COUNT = 20;
 
-const ADMIN_PASSWORD = 'admin123';
+const ADMIN_PASSWORD = '1';
 
 const VOLCANO = { x: 3000, y: 2700, r: 900 };
 
@@ -489,7 +489,7 @@ wss.on('connection', (ws) => {
         const text = String(data.text || '').slice(0, 80).trim();
         if (text.length === 0) return;
 
-        if (text === '/admin ' + ADMIN_PASSWORD) {
+        if (text === '/a ' + ADMIN_PASSWORD) {
           p.isAdmin = true;
           ws.send(JSON.stringify({ type: 'chat', system: true, text: '👑 Ты теперь админ! Стрелки ↑ ↓ — смена уровня.' }));
           return;
