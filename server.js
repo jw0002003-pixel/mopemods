@@ -10,26 +10,43 @@ app.use(express.static(path.join(__dirname, 'public')));
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 
-const WORLD = { width: 4000, height: 4000 };
+const WORLD = { width: 6000, height: 6000 };
 const TICK_RATE = 30;
-const FOOD_COUNT = 300;
-const HOLE_COUNT = 40;
-const CRYSTAL_COUNT = 15;
+const FOOD_COUNT = 500;
+const HOLE_COUNT = 60;
+const CRYSTAL_COUNT = 20;
 
 const ADMIN_PASSWORD = 'admin123';
 
-const VOLCANO = { x: 2000, y: 2000, r: 600 };
+const VOLCANO = { x: 3000, y: 2700, r: 900 };
 
 function isInVolcano(x, y) {
   return Math.hypot(x - VOLCANO.x, y - VOLCANO.y) < VOLCANO.r;
 }
 
+// === 🗺 БИОМЫ КАРТЫ 6000x6000 ===
 const BIOMES = [
-  { name: 'forest', x: 0,    y: 0,    w: 2000, h: 2000, color: '#2d5a27' },
-  { name: 'water',  x: 2000, y: 0,    w: 2000, h: 2000, color: '#1e3a5f' },
-  { name: 'desert', x: 0,    y: 2000, w: 2000, h: 2000, color: '#c2a56b' },
-  { name: 'snow',   x: 2000, y: 2000, w: 2000, h: 2000, color: '#c8d8e8' }
+  // ВЕРХ (Y: 0 - 1800)
+  { name: 'water',  x: 0,    y: 0,    w: 1500, h: 1800, color: '#1e3a5f' },
+  { name: 'snow',   x: 1500, y: 0,    w: 3000, h: 1800, color: '#c8d8e8' },
+  { name: 'water',  x: 4500, y: 0,    w: 1500, h: 1800, color: '#1e3a5f' },
+
+  // ЦЕНТР (Y: 1800 - 3600)
+  { name: 'water',  x: 0,    y: 1800, w: 1000, h: 1800, color: '#1e3a5f' },
+  { name: 'forest', x: 1000, y: 1800, w: 4000, h: 1800, color: '#2d5a27' },
+  { name: 'water',  x: 5000, y: 1800, w: 1000, h: 1800, color: '#1e3a5f' },
+
+  // РЕКА (Y: 3600 - 4200)
+  { name: 'river',  x: 0,    y: 3600, w: 6000, h: 600,  color: '#3b7fb0' },
+
+  // НИЗ (Y: 4200 - 6000)
+  { name: 'water',  x: 0,    y: 4200, w: 1000, h: 1800, color: '#1e3a5f' },
+  { name: 'desert', x: 1000, y: 4200, w: 4000, h: 1800, color: '#c2a56b' },
+  { name: 'water',  x: 5000, y: 4200, w: 1000, h: 1800, color: '#1e3a5f' }
 ];
+
+// Направление течения реки: слева направо
+const RIVER_FLOW = { x: 1, y: 0 };
 
 function getBiomeAt(x, y) {
   if (isInVolcano(x, y)) return { name: 'volcano', color: '#4a1818' };
@@ -80,13 +97,13 @@ const FOOD_TYPES = [
 ];
 
 const ANIMALS = [
-  { name: 'Мышка',           r: 15,  speed: 15, color: '#a0a0a0', xpToNext: 10,  hp: 30,  damage: 5,  fov: 500 },
-  { name: 'Кролик',          r: 20,  speed: 15, color: '#d4a373', xpToNext: 25,  hp: 50,  damage: 8,  fov: 700 },
-  { name: 'Лиса',            r: 28,  speed: 15, color: '#e07a5f', xpToNext: 50,  hp: 80,  damage: 12, fov: 900 },
-  { name: 'Волк',            r: 38,  speed: 15, color: '#8d99ae', xpToNext: 100, hp: 120, damage: 18, fov: 1300 },
-  { name: 'Медведь',         r: 52,  speed: 13, color: '#6f4e37', xpToNext: 200, hp: 180, damage: 25, fov: 1500 },
-  { name: 'Дракон',          r: 300, speed: 10, color: '#9b2226', xpToNext: 400, hp: 250, damage: 35, fov: 2000 },
-  { name: 'Король Драконов', r: 300, speed: 10, color: '#ff4500', xpToNext: Infinity, hp: 500, damage: 50, fov: 3000 }
+  { name: 'Мышка',           r: 15,  speed: 12, color: '#a0a0a0', xpToNext: 10,  hp: 30,  damage: 5,  fov: 500 },
+  { name: 'Кролик',          r: 20,  speed: 12, color: '#d4a373', xpToNext: 25,  hp: 50,  damage: 8,  fov: 700 },
+  { name: 'Лиса',            r: 28,  speed: 12, color: '#e07a5f', xpToNext: 50,  hp: 80,  damage: 12, fov: 900 },
+  { name: 'Волк',            r: 38,  speed: 12, color: '#8d99ae', xpToNext: 100, hp: 120, damage: 18, fov: 1300 },
+  { name: 'Медведь',         r: 52,  speed: 10, color: '#6f4e37', xpToNext: 200, hp: 180, damage: 25, fov: 1500 },
+  { name: 'Дракон',          r: 300, speed: 8,  color: '#9b2226', xpToNext: 400, hp: 250, damage: 35, fov: 2000 },
+  { name: 'Король Драконов', r: 300, speed: 8,  color: '#ff4500', xpToNext: Infinity, hp: 500, damage: 50, fov: 3000 }
 ];
 
 function getAnimalByLevel(level) {
@@ -100,7 +117,7 @@ let fireballs = [];
 let presents = [];
 let crystals = [];
 let meat = [];
-let arena = { x: 2000, y: 2000, r: 400, active: false };
+let arena = { x: 3000, y: 2700, r: 500, active: false };
 let nextId = 1;
 
 function broadcast(data) {
@@ -136,8 +153,8 @@ for (let i = 0; i < FOOD_COUNT; i++) food.push(spawnFood());
 function spawnCrystal() {
   let x, y;
   do {
-    x = 100 + Math.random() * (WORLD.width - 200);
-    y = 100 + Math.random() * (WORLD.height - 200);
+    x = 200 + Math.random() * (WORLD.width - 400);
+    y = 200 + Math.random() * (WORLD.height - 400);
   } while (isInVolcano(x, y));
   return {
     id: Math.random().toString(36).slice(2),
@@ -160,8 +177,8 @@ crystals.push(spawnMegaCrystal());
 function spawnHole() {
   let x, y;
   do {
-    x = 100 + Math.random() * (WORLD.width - 200);
-    y = 100 + Math.random() * (WORLD.height - 200);
+    x = 200 + Math.random() * (WORLD.width - 400);
+    y = 200 + Math.random() * (WORLD.height - 400);
   } while (isInVolcano(x, y));
   return { id: Math.random().toString(36).slice(2), x, y, r: 50 };
 }
@@ -179,6 +196,7 @@ wss.on('connection', (ws) => {
     score: 0, level: 1,
     hp: 30, maxHp: 30, damage: 5,
     water: 100, maxWater: 100,
+    air: 100, maxAir: 100,
     lastBoost: 0, boostActive: false, boostAngle: 0,
     dashVx: 0, dashVy: 0,
     isAdmin: false, isSanta: false, santaSpeed: 8,
@@ -237,7 +255,7 @@ wss.on('connection', (ws) => {
         }
 
         const now = Date.now();
-        if (now - p.lastBoost < 800) return;
+        if (now - p.lastBoost < 1000) return;
         p.lastBoost = now;
         p.boostActive = true;
         setTimeout(() => { if (players[id]) players[id].boostActive = false; }, 500);
@@ -248,7 +266,8 @@ wss.on('connection', (ws) => {
         }
         const dist = Math.hypot(dx, dy);
         if (dist > 0.01) {
-          const power = 35;
+          // 🐢 Dash в 20 раз слабее: было 35 → стало 1.75
+          const power = 1.75;
           p.dashVx = (dx / dist) * power;
           p.dashVy = (dy / dist) * power;
           p.boostAngle = Math.atan2(dy, dx);
@@ -282,7 +301,7 @@ wss.on('connection', (ws) => {
             p.lastWaterDrink = now;
           }
         } else {
-          if (biome.name === 'water') {
+          if (biome.name === 'water' || biome.name === 'river') {
             p.water = Math.min(p.maxWater, p.water + 30);
             p.lastWaterDrink = now;
           }
@@ -359,16 +378,24 @@ wss.on('connection', (ws) => {
       }
       if (data.type === 'spawn' && players[id]) {
         const p = players[id];
-        const biomeName = data.biome;
-        const biome = BIOMES.find(b => b.name === biomeName) || BIOMES[0];
-        p.x = biome.x + Math.random() * biome.w;
-        p.y = biome.y + Math.random() * biome.h;
+        // 🎲 Спавн в случайном биоме (кроме вулкана, воды и реки)
+        let x, y, biome, tries = 0;
+        do {
+          x = 200 + Math.random() * (WORLD.width - 400);
+          y = 200 + Math.random() * (WORLD.height - 400);
+          biome = getBiomeAt(x, y);
+          tries++;
+        } while ((biome.name === 'volcano' || biome.name === 'water' || biome.name === 'river') && tries < 100);
+
+        p.x = x;
+        p.y = y;
         p.level = 1;
         const animal = ANIMALS[0];
         p.r = animal.r; p.color = animal.color;
         p.hp = animal.hp; p.maxHp = animal.hp; p.damage = animal.damage;
         p.score = 0;
         p.water = p.maxWater;
+        p.air = p.maxAir;
         p.burning = 0;
         p.dead = false;
         p.spectating = false;
@@ -386,6 +413,7 @@ wss.on('connection', (ws) => {
         p.spectating = false;
         p.hp = 30; p.maxHp = 30;
         p.water = 100; p.maxWater = 100;
+        p.air = 100; p.maxAir = 100;
         p.score = 0; p.level = 1; p.r = 15;
         p.color = '#a0a0a0'; p.damage = 5;
         p.isSanta = false;
@@ -479,7 +507,7 @@ setInterval(() => {
       p.water = p.maxWater;
     } else {
       const biome = getBiomeAt(p.x, p.y);
-      if (biome.name === 'water') p.water = Math.min(p.maxWater, p.water + 0.5);
+      if (biome.name === 'water' || biome.name === 'river') p.water = Math.min(p.maxWater, p.water + 0.5);
       else p.water -= 0.1;
       if (p.water <= 0) { p.hp -= 1; p.water = 0; }
       p.water = Math.max(0, Math.min(p.maxWater, p.water));
@@ -542,14 +570,34 @@ setInterval(() => {
       continue;
     }
 
+    const currentBiome = getBiomeAt(p.x, p.y);
+    p.biome = currentBiome.name;
+
     let maxSpeed;
     if (p.isSanta) maxSpeed = p.santaSpeed * 1.5;
     else {
       const animal = getAnimalByLevel(p.level);
-      maxSpeed = animal.speed * 1.05;
+      maxSpeed = animal.speed * 0.9;
       if (p.boostActive) maxSpeed *= 1.8;
-      if (p.biome === 'water') maxSpeed *= 0.6;
-      if (p.biome === 'snow') maxSpeed *= 0.8;
+      // 🌊 Замедление в воде и реке
+      if (currentBiome.name === 'water') maxSpeed *= 0.6;
+      if (currentBiome.name === 'river') maxSpeed *= 0.8;
+      // ❄️ Замедление в снегу
+      if (currentBiome.name === 'snow') maxSpeed *= 0.8;
+    }
+
+    // 🌊 ТЕЧЕНИЕ РЕКИ
+    let riverBonusX = 0, riverBonusY = 0;
+    if (currentBiome.name === 'river') {
+      const flowLen = Math.hypot(RIVER_FLOW.x, RIVER_FLOW.y);
+      const flowNx = RIVER_FLOW.x / flowLen;
+      const flowNy = RIVER_FLOW.y / flowLen;
+      // Проекция скорости игрока на направление течения
+      const vProj = (p.vx * flowNx + p.vy * flowNy);
+      const flowStrength = 2.5; // сила течения
+      // Если плывёт по течению — ускоряем, против — тормозим
+      riverBonusX = flowNx * flowStrength * (vProj >= 0 ? 1 : -0.5);
+      riverBonusY = flowNy * flowStrength * (vProj >= 0 ? 1 : -0.5);
     }
 
     if (p.moveDirX !== null && p.moveDirX !== undefined) {
@@ -576,6 +624,10 @@ setInterval(() => {
       }
     }
 
+    // Добавляем бонус от течения реки
+    p.vx += riverBonusX;
+    p.vy += riverBonusY;
+
     p.vx += p.dashVx; p.vy += p.dashVy;
     p.dashVx *= 0.75; p.dashVy *= 0.75;
     if (Math.abs(p.dashVx) < 0.05) p.dashVx = 0;
@@ -594,7 +646,7 @@ setInterval(() => {
     p.x = Math.max(wallOffset, Math.min(WORLD.width - wallOffset, p.x));
     p.y = Math.max(wallOffset, Math.min(WORLD.height - wallOffset, p.y));
 
-    // 🍓 Столкновение только когда еда стоит (не летит)
+    // 🍓 Столкновение только когда еда стоит
     if (!p.hidden && !p.dead) {
       for (const f of food) {
         if (f.hp <= 0) continue;
@@ -737,7 +789,7 @@ setInterval(() => {
     const p = players[id];
     if (p.hidden || p.isSanta || p.dead) continue;
 
-    // 🍓 ЕДА — мягкое отталкивание
+    // 🍓 ЕДА
     for (let i = food.length - 1; i >= 0; i--) {
       const f = food[i];
       if (f.hp <= 0) continue;
@@ -763,12 +815,10 @@ setInterval(() => {
             f.hp -= 1;
           }
 
-          // 🎯 Плавное отталкивание: маленький импульс
           const nx = (f.x - p.x) / (distToFood || 1);
           const ny = (f.y - p.y) / (distToFood || 1);
 
           const power = isDragon ? 1.2 : 0.5;
-
           f.vx += nx * power;
           f.vy += ny * power;
 
@@ -796,7 +846,7 @@ setInterval(() => {
       }
     }
 
-    // 🍖 МЯСО — мягкое отталкивание
+    // 🍖 МЯСО
     for (let i = meat.length - 1; i >= 0; i--) {
       const m = meat[i];
       if (m.hp <= 0) continue;
@@ -824,7 +874,6 @@ setInterval(() => {
           const ny = (m.y - p.y) / (distToMeat || 1);
 
           const power = isDragon ? 1.2 : 0.5;
-
           m.vx += nx * power;
           m.vy += ny * power;
 
@@ -911,8 +960,8 @@ setInterval(() => {
       } else {
         let x, y;
         do {
-          x = 100 + Math.random() * (WORLD.width - 200);
-          y = 100 + Math.random() * (WORLD.height - 200);
+          x = 200 + Math.random() * (WORLD.width - 400);
+          y = 200 + Math.random() * (WORLD.height - 400);
         } while (isInVolcano(x, y));
         c.x = x; c.y = y; c.hp = c.maxHp; c.respawnAt = 0;
       }
@@ -994,4 +1043,6 @@ const PORT = process.env.PORT || 3000;
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`Сервер запущен: http://localhost:${PORT}`);
   console.log(`👑 Админ-пароль: ${ADMIN_PASSWORD}`);
+  console.log(`🗺 Карта: ${WORLD.width}x${WORLD.height}`);
+  console.log(`🌋 Вулкан: центр (${VOLCANO.x}, ${VOLCANO.y}), радиус ${VOLCANO.r}`);
 });
