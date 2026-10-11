@@ -201,8 +201,9 @@ wss.on('connection', (ws) => {
           const dist = Math.hypot(dirX, dirY) || 1;
           p.x += (dirX / dist) * 120;
           p.y += (dirY / dist) * 120;
-          p.x = Math.max(p.r, Math.min(WORLD.width - p.r, p.x));
-          p.y = Math.max(p.r, Math.min(WORLD.height - p.r, p.y));
+         const wallOffset = p.r * 1.3;
+p.x = Math.max(wallOffset, Math.min(WORLD.width - wallOffset, p.x));
+p.y = Math.max(wallOffset, Math.min(WORLD.height - wallOffset, p.y));
           p.holeCooldown = Date.now() + 1500;
           return;
         }
