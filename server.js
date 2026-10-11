@@ -779,7 +779,7 @@ setInterval(() => {
             f.hp -= 1;
           }
 
-          // 🐉 Сила толчка еды — обычные слабо, дракон сильно
+          // 🐉 Сила толчка еды — задаём ЦЕЛЕВУЮ скорость (не мгновенную)
           const knockback = isDragon
             ? 25 + p.r * 0.12
             : 8 + p.r * 0.10;
@@ -787,8 +787,9 @@ setInterval(() => {
           const nx = (f.x - p.x) / (distToFood || 1);
           const ny = (f.y - p.y) / (distToFood || 1);
 
-          f.vx = nx * knockback;
-          f.vy = ny * knockback;
+          // 🎯 Целевая скорость — еда будет плавно к ней ускоряться
+          f.targetVx = nx * knockback;
+          f.targetVy = ny * knockback;
 
           const recoil = isDragon ? 0.5 + p.r * 0.01 : 2 + p.r * 0.06;
           p.vx -= nx * recoil;
