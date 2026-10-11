@@ -477,40 +477,34 @@ camera.y = focusY - viewH / 2;
     if (p.isSanta) drawSkin(ctx, x, y, skinSize, 'santa', p.renderAngle !== undefined ? p.renderAngle : p.angle);
     else drawSkin(ctx, x, y, skinSize, p.level, p.renderAngle !== undefined ? p.renderAngle : p.angle);
 
-// Анимация удара лапой (для медведя) — ТОЛЬКО ПОЛУКРУГ
+// Анимация удара лапой (для медведя) — БЫСТРАЯ ВСПЫШКА
 const swingElapsed = Date.now() - (p.swingTime || 0);
-if (p.level === 5 && swingElapsed < 300) {
+if (p.level === 5 && swingElapsed < 150) {
   const PR = Math.max(0.1, Math.abs(p.r || 1));
-
-  const swingDuration = 300;
-  const t = Math.min(1, swingElapsed / swingDuration);
-  const fade = t < 0.5 ? t * 2 : (1 - t) * 2;
-
   const angle = p.renderAngle !== undefined ? p.renderAngle : (p.angle || 0);
   const reach = PR * 1.6;
 
-  ctx.globalAlpha = fade;
+  // Прогресс от 1 (сразу) до 0 (за 150 мс)
+  const fade = 1 - swingElapsed / 150;
 
   // Полукруг удара спереди
   ctx.beginPath();
-  ctx.arc(x, y, Math.max(0.1, reach), angle - Math.PI / 2.2, angle + Math.PI / 2.2);
-  ctx.strokeStyle = `rgba(255, 200, 100, ${fade * 0.8})`;
+  ctx.arc(x, y, Math.max(0.1, reach), angle - Math.PI / 2, angle + Math.PI / 2);
+  ctx.strokeStyle = `rgba(255, 220, 100, ${fade})`;
   ctx.lineWidth = 8;
   ctx.stroke();
 
-  // Вспышка у носа (яркая точка)
+  // Вспышка у носа
   const noseX = x + Math.cos(angle) * reach * 0.7;
   const noseY = y + Math.sin(angle) * reach * 0.7;
-  const glow = ctx.createRadialGradient(noseX, noseY, 0, noseX, noseY, PR * 0.8);
-  glow.addColorStop(0, `rgba(255, 255, 200, ${fade})`);
-  glow.addColorStop(0.5, `rgba(255, 200, 100, ${fade * 0.5})`);
+  const glow = ctx.createRadialGradient(noseX, noseY, 0, noseX, noseY, PR * 0.9);
+  glow.addColorStop(0, `rgba(255, 255, 220, ${fade})`);
+  glow.addColorStop(0.6, `rgba(255, 200, 100, ${fade * 0.6})`);
   glow.addColorStop(1, 'rgba(255, 150, 0, 0)');
   ctx.fillStyle = glow;
   ctx.beginPath();
-  ctx.arc(noseX, noseY, PR * 0.8, 0, Math.PI * 2);
+  ctx.arc(noseX, noseY, PR * 0.9, 0, Math.PI * 2);
   ctx.fill();
-
-  ctx.globalAlpha = 1;
 }
 
 
