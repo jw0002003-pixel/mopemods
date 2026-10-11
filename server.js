@@ -129,7 +129,7 @@ function spawnFood() {
     emoji: type.emoji, xp: type.xp, minLevel: type.minLevel, biome: type.biome,
     hp: type.bites, maxHp: type.bites, bites: type.bites,
     vx: 0, vy: 0,
-    targetVx: 0, targetVy: 0
+    pushPower: 0, pushFromX: 0, pushFromY: 0
   };
 }
 for (let i = 0; i < FOOD_COUNT; i++) food.push(spawnFood());
@@ -265,9 +265,7 @@ wss.on('connection', (ws) => {
           id: Math.random().toString(36).slice(2),
           x: p.x + (Math.random() - 0.5) * 200,
           y: p.y + (Math.random() - 0.5) * 200,
-          r: 20, xp: 25 + Math.floor(Math.random() * 25),
-          vx: 0, vy: 0,
-          targetVx: 0, targetVy: 0
+          r: 20, xp: 25 + Math.floor(Math.random() * 25)
         });
       }
       if (data.type === 'santa_speed' && players[id] && players[id].isSanta) {
@@ -522,7 +520,7 @@ setInterval(() => {
           color: ['#8B0000', '#A52A2A', '#B22222', '#DC143C'][Math.floor(Math.random() * 4)],
           emoji: '🍖',
           vx: 0, vy: 0,
-          targetVx: 0, targetVy: 0
+          pushPower: 0, pushFromX: 0, pushFromY: 0
         });
       }
 
@@ -598,17 +596,17 @@ setInterval(() => {
     p.x = Math.max(wallOffset, Math.min(WORLD.width - wallOffset, p.x));
     p.y = Math.max(wallOffset, Math.min(WORLD.height - wallOffset, p.y));
 
-    // 🍓 Мягкое столкновение с едой и мясом (драконы — проходят сквозь)
-    // Летящую еду не трогаем — пусть отскакивает
+    // 🍓 Мягкое столкновение с едой (драконы — сквозь)
+    // Летящую еду не трогаем — она сама уедет
     if (!p.hidden && !p.dead) {
       for (const f of food) {
         if (f.hp <= 0) continue;
-        if (Math.abs(f.vx) > 0.5 || Math.abs(f.vy) > 0.5) continue;
+        if (Math.abs(f.vx) > 0.3 || Math.abs(f.vy) > 0.3) continue;
         resolveFoodCollision(p, f);
       }
       for (const m of meat) {
         if (m.hp <= 0) continue;
-        if (Math.abs(m.vx) > 0.5 || Math.abs(m.vy) > 0.5) continue;
+        if (Math.abs(m.vx) > 0.3 || Math.abs(m.vy) > 0.3) continue;
         resolveFoodCollision(p, m);
       }
     }
@@ -632,19 +630,30 @@ setInterval(() => {
     }
   }
 
-  // 🍓 ФИЗИКА ЕДЫ И МЯСА — плавное ускорение и торможение
+  // 🍓 ФИЗИКА ЕДЫ И МЯСА — плавное выталкивание
   for (const f of food) {
     if (f.hp <= 0) continue;
     if (f.vx === undefined) { f.vx = 0; f.vy = 0; }
-    if (f.targetVx === undefined) { f.targetVx = 0; f.targetVy = 0; }
+    if (f.pushPower === undefined) { f.pushPower = 0; f.pushFromX = 0; f.pushFromY = 0; }
 
-    // Плавно приближаемся к целевой скорости (ускорение)
-    f.vx += (f.targetVx - f.vx) * 0.12;
-    f.vy += (f.targetVy - f.vy) * 0.12;
+    // Если еда «отталкивается» — плавно накапливаем скорость
+    if (f.pushPower && f.pushPower > 0.01) {
+      const dx = f.x - f.pushFromX;
+      const dy = f.y - f.pushFromY;
+      const d = Math.hypot(dx, dy) || 1;
+      const nx = dx / d;
+      const ny = dy / d;
 
-    // Плавно сбрасываем цель — чтобы еда постепенно тормозила
-    f.targetVx *= 0.96;
-    f.targetVy *= 0.96;
+      f.vx += nx * f.pushPower;
+      f.vy += ny * f.pushPower;
+
+      f.pushPower *= 0.90;
+      if (f.pushPower < 0.01) f.pushPower = 0;
+    }
+
+    // Трение — плавное затухание скорости
+    f.vx *= 0.97;
+    f.vy *= 0.97;
 
     if (Math.abs(f.vx) > 0.01 || Math.abs(f.vy) > 0.01) {
       f.x += f.vx;
@@ -661,13 +670,24 @@ setInterval(() => {
   for (const m of meat) {
     if (m.hp <= 0) continue;
     if (m.vx === undefined) { m.vx = 0; m.vy = 0; }
-    if (m.targetVx === undefined) { m.targetVx = 0; m.targetVy = 0; }
+    if (m.pushPower === undefined) { m.pushPower = 0; m.pushFromX = 0; m.pushFromY = 0; }
 
-    m.vx += (m.targetVx - m.vx) * 0.12;
-    m.vy += (m.targetVy - m.vy) * 0.12;
+    if (m.pushPower && m.pushPower > 0.01) {
+      const dx = m.x - m.pushFromX;
+      const dy = m.y - m.pushFromY;
+      const d = Math.hypot(dx, dy) || 1;
+      const nx = dx / d;
+      const ny = dy / d;
 
-    m.targetVx *= 0.96;
-    m.targetVy *= 0.96;
+      m.vx += nx * m.pushPower;
+      m.vy += ny * m.pushPower;
+
+      m.pushPower *= 0.90;
+      if (m.pushPower < 0.01) m.pushPower = 0;
+    }
+
+    m.vx *= 0.97;
+    m.vy *= 0.97;
 
     if (Math.abs(m.vx) > 0.01 || Math.abs(m.vy) > 0.01) {
       m.x += m.vx;
@@ -752,7 +772,7 @@ setInterval(() => {
     const p = players[id];
     if (p.hidden || p.isSanta || p.dead) continue;
 
-    // 🍓 ЕДА — укус, задаём ЦЕЛЕВУЮ скорость
+    // 🍓 ЕДА — укус, задаём pushPower (плавное выталкивание)
     for (let i = food.length - 1; i >= 0; i--) {
       const f = food[i];
       if (f.hp <= 0) continue;
@@ -780,16 +800,16 @@ setInterval(() => {
 
           // 🐉 Сила толчка
           const knockback = isDragon
-            ? 25 + p.r * 0.12
-            : 8 + p.r * 0.10;
+            ? 3.0 + p.r * 0.015
+            : 1.2 + p.r * 0.02;
+
+          // 🎯 Задаём силу выталкивания (накапливается покадрово)
+          f.pushFromX = p.x;
+          f.pushFromY = p.y;
+          f.pushPower = knockback;
 
           const nx = (f.x - p.x) / (distToFood || 1);
           const ny = (f.y - p.y) / (distToFood || 1);
-
-          // 🎯 Целевая скорость — еда плавно к ней ускорится
-          f.targetVx = nx * knockback;
-          f.targetVy = ny * knockback;
-
           const recoil = isDragon ? 0.5 + p.r * 0.01 : 2 + p.r * 0.06;
           p.vx -= nx * recoil;
           p.vy -= ny * recoil;
@@ -814,7 +834,7 @@ setInterval(() => {
       }
     }
 
-    // 🍖 МЯСО — укус, задаём ЦЕЛЕВУЮ скорость
+    // 🍖 МЯСО — укус, задаём pushPower
     for (let i = meat.length - 1; i >= 0; i--) {
       const m = meat[i];
       if (m.hp <= 0) continue;
@@ -839,15 +859,15 @@ setInterval(() => {
           }
 
           const knockback = isDragon
-            ? 25 + p.r * 0.12
-            : 8 + p.r * 0.10;
+            ? 3.0 + p.r * 0.015
+            : 1.2 + p.r * 0.02;
+
+          m.pushFromX = p.x;
+          m.pushFromY = p.y;
+          m.pushPower = knockback;
 
           const nx = (m.x - p.x) / (distToMeat || 1);
           const ny = (m.y - p.y) / (distToMeat || 1);
-
-          m.targetVx = nx * knockback;
-          m.targetVy = ny * knockback;
-
           const recoil = isDragon ? 0.5 + p.r * 0.01 : 2 + p.r * 0.06;
           p.vx -= nx * recoil;
           p.vy -= ny * recoil;
