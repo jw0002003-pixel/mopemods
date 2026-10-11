@@ -88,11 +88,18 @@ function resolveCrystalCollision(p, c) {
     p.x += nx * overlap * 0.6;
     p.y += ny * overlap * 0.6;
 
-    // Кристалл получает маленький толчок (тяжёлый!)
-    // Чем ближе — тем сильнее, но всё равно медленно
-    const pushStrength = 0.08; // 🐌 медленно, тяжело
+    // Кристалл получает плавный толчок (тяжёлый, но не дёргается)
+    const pushStrength = 0.25; // 🐌 медленно, но заметно
     c.vx -= nx * overlap * pushStrength;
     c.vy -= ny * overlap * pushStrength;
+
+    // Ограничиваем максимальную скорость — тяжёлый камень не разгонится
+    const maxCrystalSpeed = 3.5;
+    const cSpeed = Math.hypot(c.vx, c.vy);
+    if (cSpeed > maxCrystalSpeed) {
+      c.vx = (c.vx / cSpeed) * maxCrystalSpeed;
+      c.vy = (c.vy / cSpeed) * maxCrystalSpeed;
+    }
 
     // Гасим скорость игрока в сторону кристалла
     const vn = p.vx * nx + p.vy * ny;
