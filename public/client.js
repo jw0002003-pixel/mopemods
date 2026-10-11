@@ -270,9 +270,19 @@ function draw() {
   const dt = Math.min(50, nowMs - (window._lastDraw || nowMs)) / 1000;
   window._lastDraw = nowMs;
 
-  for (const id in players) {
+    for (const id in players) {
     const p = players[id];
     if (!p || p.dead) continue;
+
+    // 🚫 Сброс интерполяции — если сервер пометил skipInterpolation
+    if (p.skipInterpolation) {
+      p.renderX = p.x;
+      p.renderY = p.y;
+      p.renderAngle = p.angle || 0;
+      p.skipInterpolation = false;
+      continue;
+    }
+
     if (p.renderX === undefined) {
       p.renderX = p.x;
       p.renderY = p.y;
