@@ -623,7 +623,7 @@ if (p.level === 5 && swingElapsed < 150) {
     const p = players[myId];
     const animalNames = ['Мышка', 'Кролик', 'Лиса', 'Волк', 'Медведь', 'Дракон', 'Король Драконов'];
     const animalName = p.isSanta ? '🎅 Дед Мороз' : animalNames[Math.min(p.level - 1, animalNames.length - 1)];
-    const boostCd = p.lastBoost ? Math.max(0, 800 - (Date.now() - p.lastBoost)) : 0;
+    const boostCd = p.lastBoost ? Math.max(0, 500 - (Date.now() - p.lastBoost)) : 0;
     const boostStatus = boostCd > 0 ? `⏳ ${(boostCd / 1000).toFixed(1)}s` : '⚡ READY';
     const adminTag = isAdmin ? ' 👑ADMIN' : '';
     let quest = '';
