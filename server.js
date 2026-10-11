@@ -41,7 +41,6 @@ function getBiomeAt(x, y) {
 
 // 🍓 Мягкое расталкивание игрока и еды
 function resolveFoodCollision(p, f) {
-  // 🐉 Дракон (6) и Король (7) ходят сквозь еду
   if (p.level >= 6) return false;
 
   const dx = p.x - f.x;
@@ -129,7 +128,8 @@ function spawnFood() {
     x, y, r: type.r, color: type.color, type: type.name,
     emoji: type.emoji, xp: type.xp, minLevel: type.minLevel, biome: type.biome,
     hp: type.bites, maxHp: type.bites, bites: type.bites,
-    vx: 0, vy: 0
+    vx: 0, vy: 0,
+    targetVx: 0, targetVy: 0
   };
 }
 for (let i = 0; i < FOOD_COUNT; i++) food.push(spawnFood());
@@ -266,7 +266,8 @@ wss.on('connection', (ws) => {
           x: p.x + (Math.random() - 0.5) * 200,
           y: p.y + (Math.random() - 0.5) * 200,
           r: 20, xp: 25 + Math.floor(Math.random() * 25),
-          vx: 0, vy: 0
+          vx: 0, vy: 0,
+          targetVx: 0, targetVy: 0
         });
       }
       if (data.type === 'santa_speed' && players[id] && players[id].isSanta) {
@@ -520,7 +521,8 @@ setInterval(() => {
           hp: 2, maxHp: 2,
           color: ['#8B0000', '#A52A2A', '#B22222', '#DC143C'][Math.floor(Math.random() * 4)],
           emoji: '🍖',
-          vx: 0, vy: 0
+          vx: 0, vy: 0,
+          targetVx: 0, targetVy: 0
         });
       }
 
@@ -533,7 +535,6 @@ setInterval(() => {
     const p = players[id];
     if (p.hidden || p.dead) continue;
 
-    // ⚡ Проверка оглушения
     if (p.stunned && Date.now() < p.stunned) {
       p.vx *= 0.85; p.vy *= 0.85;
       p.vx += p.dashVx; p.vy += p.dashVy;
@@ -593,7 +594,6 @@ setInterval(() => {
 
     p.x += p.vx; p.y += p.vy;
 
-    // === ОТСТУП У СТЕНЫ ===
     const wallOffset = p.r * 0.5;
     p.x = Math.max(wallOffset, Math.min(WORLD.width - wallOffset, p.x));
     p.y = Math.max(wallOffset, Math.min(WORLD.height - wallOffset, p.y));
@@ -632,23 +632,23 @@ setInterval(() => {
     }
   }
 
-   // 🍓 ФИЗИКА ЕДЫ И МЯСА — очень плавное скольжение
+  // 🍓 ФИЗИКА ЕДЫ И МЯСА — плавное ускорение и торможение
   for (const f of food) {
     if (f.hp <= 0) continue;
     if (f.vx === undefined) { f.vx = 0; f.vy = 0; }
+    if (f.targetVx === undefined) { f.targetVx = 0; f.targetVy = 0; }
 
-    const speed = Math.hypot(f.vx, f.vy);
+    // Плавно приближаемся к целевой скорости (ускорение)
+    f.vx += (f.targetVx - f.vx) * 0.12;
+    f.vy += (f.targetVy - f.vy) * 0.12;
 
-    if (speed > 0.02) {
+    // Плавно сбрасываем цель — чтобы еда постепенно тормозила
+    f.targetVx *= 0.96;
+    f.targetVy *= 0.96;
+
+    if (Math.abs(f.vx) > 0.01 || Math.abs(f.vy) > 0.01) {
       f.x += f.vx;
       f.y += f.vy;
-
-      // 🐌 Очень плавное затухание — еда катится долго
-      // Чем медленнее еда — тем быстрее её догоняет затухание (мягкая остановка)
-      const friction = speed > 2 ? 0.985 : 0.94;
-      f.vx *= friction;
-      f.vy *= friction;
-
       const margin = f.r;
       f.x = Math.max(margin, Math.min(WORLD.width - margin, f.x));
       f.y = Math.max(margin, Math.min(WORLD.height - margin, f.y));
@@ -661,17 +661,17 @@ setInterval(() => {
   for (const m of meat) {
     if (m.hp <= 0) continue;
     if (m.vx === undefined) { m.vx = 0; m.vy = 0; }
+    if (m.targetVx === undefined) { m.targetVx = 0; m.targetVy = 0; }
 
-    const speed = Math.hypot(m.vx, m.vy);
+    m.vx += (m.targetVx - m.vx) * 0.12;
+    m.vy += (m.targetVy - m.vy) * 0.12;
 
-    if (speed > 0.02) {
+    m.targetVx *= 0.96;
+    m.targetVy *= 0.96;
+
+    if (Math.abs(m.vx) > 0.01 || Math.abs(m.vy) > 0.01) {
       m.x += m.vx;
       m.y += m.vy;
-
-      const friction = speed > 2 ? 0.985 : 0.94;
-      m.vx *= friction;
-      m.vy *= friction;
-
       const margin = m.r;
       m.x = Math.max(margin, Math.min(WORLD.width - margin, m.x));
       m.y = Math.max(margin, Math.min(WORLD.height - margin, m.y));
@@ -752,7 +752,7 @@ setInterval(() => {
     const p = players[id];
     if (p.hidden || p.isSanta || p.dead) continue;
 
-    // 🍓 ЕДА — укус, еда плавно отлетает
+    // 🍓 ЕДА — укус, задаём ЦЕЛЕВУЮ скорость
     for (let i = food.length - 1; i >= 0; i--) {
       const f = food[i];
       if (f.hp <= 0) continue;
@@ -772,14 +772,13 @@ setInterval(() => {
 
           const isDragon = p.level >= 6;
 
-          // 🐉 Дракон и Король — съедают с одного укуса
           if (isDragon) {
             f.hp = 0;
           } else {
             f.hp -= 1;
           }
 
-          // 🐉 Сила толчка еды — задаём ЦЕЛЕВУЮ скорость (не мгновенную)
+          // 🐉 Сила толчка
           const knockback = isDragon
             ? 25 + p.r * 0.12
             : 8 + p.r * 0.10;
@@ -787,7 +786,7 @@ setInterval(() => {
           const nx = (f.x - p.x) / (distToFood || 1);
           const ny = (f.y - p.y) / (distToFood || 1);
 
-          // 🎯 Целевая скорость — еда будет плавно к ней ускоряться
+          // 🎯 Целевая скорость — еда плавно к ней ускорится
           f.targetVx = nx * knockback;
           f.targetVy = ny * knockback;
 
@@ -815,7 +814,7 @@ setInterval(() => {
       }
     }
 
-    // 🍖 МЯСО — укус, мясо плавно отлетает
+    // 🍖 МЯСО — укус, задаём ЦЕЛЕВУЮ скорость
     for (let i = meat.length - 1; i >= 0; i--) {
       const m = meat[i];
       if (m.hp <= 0) continue;
@@ -846,8 +845,8 @@ setInterval(() => {
           const nx = (m.x - p.x) / (distToMeat || 1);
           const ny = (m.y - p.y) / (distToMeat || 1);
 
-          m.vx = nx * knockback;
-          m.vy = ny * knockback;
+          m.targetVx = nx * knockback;
+          m.targetVy = ny * knockback;
 
           const recoil = isDragon ? 0.5 + p.r * 0.01 : 2 + p.r * 0.06;
           p.vx -= nx * recoil;
