@@ -242,8 +242,8 @@ function draw() {
     }
   } else if (myId && players[myId] && !players[myId].dead) {
     const meP = players[myId];
-    focusX = meP.renderX !== undefined ? meP.renderX : meP.x;
-    focusY = meP.renderY !== undefined ? meP.renderY : meP.y;
+    focusX = meP.x;
+    focusY = meP.y;
   } else {
     focusX = 2000; focusY = 2000;
   }
@@ -260,7 +260,7 @@ function draw() {
       p.renderY = p.y;
       p.renderAngle = p.angle || 0;
     } else {
-      const smooth = 1 - Math.pow(0.001, dt * 15);
+      const smooth = 1 - Math.pow(0.001, dt * 30);
       p.renderX = lerp(p.renderX, p.x, smooth);
       p.renderY = lerp(p.renderY, p.y, smooth);
       let angleDiff = (p.angle || 0) - p.renderAngle;
@@ -283,31 +283,20 @@ function draw() {
 
   const viewW = canvas.width / camera.zoom;
   const viewH = canvas.height / camera.zoom;
-camera.x = focusX - viewW / 2;
-camera.y = focusY - viewH / 2;
+  camera.x = focusX - viewW / 2;
+  camera.y = focusY - viewH / 2;
 
-// Не показывать за картой
-if (viewW < world.width) {
-  camera.x = Math.max(0, Math.min(world.width - viewW, camera.x));
-} else {
-  camera.x = (world.width - viewW) / 2;
-}
-if (viewH < world.height) {
-  camera.y = Math.max(0, Math.min(world.height - viewH, camera.y));
-} else {
-  camera.y = (world.height - viewH) / 2;
-}
-// Ограничить камеру — не показывать за картой
-if (viewW < world.width) {
-  camera.x = Math.max(0, Math.min(world.width - viewW, camera.x));
-} else {
-  camera.x = (world.width - viewW) / 2;
-}
-if (viewH < world.height) {
-  camera.y = Math.max(0, Math.min(world.height - viewH, camera.y));
-} else {
-  camera.y = (world.height - viewH) / 2;
-}
+  // Ограничить камеру — не показывать за картой
+  if (viewW < world.width) {
+    camera.x = Math.max(0, Math.min(world.width - viewW, camera.x));
+  } else {
+    camera.x = (world.width - viewW) / 2;
+  }
+  if (viewH < world.height) {
+    camera.y = Math.max(0, Math.min(world.height - viewH, camera.y));
+  } else {
+    camera.y = (world.height - viewH) / 2;
+  }
 
   ctx.save();
   ctx.scale(camera.zoom, camera.zoom);
@@ -354,19 +343,6 @@ if (viewH < world.height) {
     ctx.fillStyle = '#ffd700';
     ctx.fillText('⚔️ АРЕНА ⚔️', ax, ay - arena.r - 10);
   }
-
-// СЕТКА — УБРАНА
-// ctx.strokeStyle = 'rgba(0,0,0,0.15)';
-// ctx.lineWidth = 1;
-// const grid = 100;
-// const startX = Math.floor(camera.x / grid) * grid;
-// const startY = Math.floor(camera.y / grid) * grid;
-// for (let x = startX; x < camera.x + viewW + grid; x += grid) {
-//   ctx.beginPath(); ctx.moveTo(x - camera.x, 0); ctx.lineTo(x - camera.x, viewH); ctx.stroke();
-// }
-// for (let y = startY; y < camera.y + viewH + grid; y += grid) {
-//   ctx.beginPath(); ctx.moveTo(0, y - camera.y); ctx.lineTo(viewW, y - camera.y); ctx.stroke();
-// }
 
   ctx.strokeStyle = '#fff'; ctx.lineWidth = 4;
   ctx.strokeRect(-camera.x, -camera.y, world.width, world.height);
