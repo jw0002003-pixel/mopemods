@@ -46,6 +46,12 @@ const chatInput = document.getElementById('chat-input');
 let chatOpen = false;
 
 const ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}`);
+// Безопасная отправка — не шлёт, если WS закрыт
+function safeSend(data) {
+  if (ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify(data));
+  }
+}
 
 ws.onmessage = (event) => {
   const data = JSON.parse(event.data);
