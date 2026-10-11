@@ -53,11 +53,11 @@ const FOOD_TYPES = [
 ];
 
 const ANIMALS = [
-  { name: 'Мышка',           r: 15, speed: 15, color: '#a0a0a0', xpToNext: 10,  hp: 30,  damage: 5,  fov: 500 },
-  { name: 'Кролик',          r: 20, speed: 15, color: '#d4a373', xpToNext: 25,  hp: 50,  damage: 8,  fov: 700 },
-  { name: 'Лиса',            r: 28, speed: 15, color: '#e07a5f', xpToNext: 50,  hp: 80,  damage: 12, fov: 900 },
-  { name: 'Волк',            r: 38, speed: 15, color: '#8d99ae', xpToNext: 100, hp: 120, damage: 18, fov: 1300 },
-  { name: 'Медведь',         r: 52, speed: 13, color: '#6f4e37', xpToNext: 200, hp: 180, damage: 25, fov: 1500 },
+  { name: 'Мышка',           r: 15,  speed: 15, color: '#a0a0a0', xpToNext: 10,  hp: 30,  damage: 5,  fov: 500 },
+  { name: 'Кролик',          r: 20,  speed: 15, color: '#d4a373', xpToNext: 25,  hp: 50,  damage: 8,  fov: 700 },
+  { name: 'Лиса',            r: 28,  speed: 15, color: '#e07a5f', xpToNext: 50,  hp: 80,  damage: 12, fov: 900 },
+  { name: 'Волк',            r: 38,  speed: 15, color: '#8d99ae', xpToNext: 100, hp: 120, damage: 18, fov: 1300 },
+  { name: 'Медведь',         r: 52,  speed: 13, color: '#6f4e37', xpToNext: 200, hp: 180, damage: 25, fov: 1500 },
   { name: 'Дракон',          r: 300, speed: 10, color: '#9b2226', xpToNext: 400, hp: 250, damage: 35, fov: 2000 },
   { name: 'Король Драконов', r: 500, speed: 10, color: '#ff4500', xpToNext: Infinity, hp: 500, damage: 50, fov: 3000 }
 ];
@@ -161,7 +161,7 @@ wss.on('connection', (ws) => {
     lastVolcanoDamage: 0, lastSantaGift: 0, lastWaterDrink: 0,
     inHole: false, hidden: false, burning: 0, dead: false,
     spectating: false, inArena: false,
-        previousScore: 0,
+    previousScore: 0,
     holeCooldown: 0,
     lastAbility: 0
   };
@@ -201,9 +201,8 @@ wss.on('connection', (ws) => {
           const dist = Math.hypot(dirX, dirY) || 1;
           p.x += (dirX / dist) * 120;
           p.y += (dirY / dist) * 120;
-         const wallOffset = p.r * 1.3;
-p.x = Math.max(wallOffset, Math.min(WORLD.width - wallOffset, p.x));
-p.y = Math.max(wallOffset, Math.min(WORLD.height - wallOffset, p.y));
+          p.x = Math.max(p.r, Math.min(WORLD.width - p.r, p.x));
+          p.y = Math.max(p.r, Math.min(WORLD.height - p.r, p.y));
           p.holeCooldown = Date.now() + 1500;
           return;
         }
@@ -260,7 +259,7 @@ p.y = Math.max(wallOffset, Math.min(WORLD.height - wallOffset, p.y));
           }
         }
       }
-            if (data.type === 'ability' && players[id]) {
+      if (data.type === 'ability' && players[id]) {
         const p = players[id];
         if (p.dead || p.hidden || p.isSanta) return;
         const ability = getAbilityByLevel(p.level);
@@ -439,7 +438,6 @@ let tickCount = 0;
 setInterval(() => {
   tickCount++;
 
-  // Регенерация + вода + вулкан
   for (const id in players) {
     if (!players[id]) continue;
     const p = players[id];
@@ -498,7 +496,6 @@ setInterval(() => {
     }
   }
 
-  // Движение (только НЕ в норке)
   for (const id in players) {
     if (!players[id]) continue;
     const p = players[id];
@@ -551,10 +548,12 @@ setInterval(() => {
     }
 
     p.x += p.vx; p.y += p.vy;
-    p.x = Math.max(p.r, Math.min(WORLD.width - p.r, p.x));
-    p.y = Math.max(p.r, Math.min(WORLD.height - p.r, p.y));
 
-    // Поворот
+    // === ОТСТУП У СТЕНЫ: 1.3 × радиус (спрайт 2.6r — касается стены) ===
+    const wallOffset = p.r * 1.3;
+    p.x = Math.max(wallOffset, Math.min(WORLD.width - wallOffset, p.x));
+    p.y = Math.max(wallOffset, Math.min(WORLD.height - wallOffset, p.y));
+
     let aimDx, aimDy;
     if (p.moveDirX !== null && p.moveDirX !== undefined && (Math.abs(p.moveDirX) > 0.01 || Math.abs(p.moveDirY) > 0.01)) {
       aimDx = p.moveDirX; aimDy = p.moveDirY;
@@ -596,7 +595,6 @@ setInterval(() => {
     }
   }
 
-  // ДВИЖЕНИЕ ВНУТРИ НОРКИ
   for (const id in players) {
     if (!players[id]) continue;
     const p = players[id];
@@ -635,7 +633,6 @@ setInterval(() => {
     }
   }
 
-  // Еда
   for (const id in players) {
     if (!players[id]) continue;
     const p = players[id];
@@ -696,7 +693,6 @@ setInterval(() => {
     }
   }
 
-  // Кристаллы
   for (const id in players) {
     if (!players[id]) continue;
     const p = players[id];
@@ -734,7 +730,6 @@ setInterval(() => {
     }
   }
 
-  // Респавн кристаллов
   const now = Date.now();
   for (const c of crystals) {
     if (c.hp <= 0 && c.respawnAt && now >= c.respawnAt) {
@@ -755,7 +750,6 @@ setInterval(() => {
     }
   }
 
-  // PvP
   const ids = Object.keys(players);
   for (let a = 0; a < ids.length; a++) {
     for (let b = a + 1; b < ids.length; b++) {
@@ -787,7 +781,6 @@ setInterval(() => {
     }
   }
 
-  // Огненные шары
   for (let i = fireballs.length - 1; i >= 0; i--) {
     const fb = fireballs[i];
     fb.x += fb.vx; fb.y += fb.vy; fb.life -= 1;
@@ -815,11 +808,9 @@ setInterval(() => {
     }
   }
 
-  // === FAST: игроки + фаерболы (30 раз/сек) ===
   const fastState = JSON.stringify({ type: 'state_fast', players, fireballs });
   wss.clients.forEach((c) => { if (c.readyState === WebSocket.OPEN) c.send(fastState); });
 
-  // === SLOW: статика (5 раз/сек = каждый 6-й тик) ===
   if (tickCount % 6 === 0) {
     const slowState = JSON.stringify({
       type: 'state_slow',
