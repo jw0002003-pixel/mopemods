@@ -1,1185 +1,879 @@
-const express = require('express');
-const http = require('http');
-const WebSocket = require('ws');
-const path = require('path');
-const { getAbilityByLevel } = require('./abilities');
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const hud = document.getElementById('hud');
+const leaderboard = document.getElementById('leaderboard');
+const minimap = document.getElementById('minimap');
+const mmCtx = minimap.getContext('2d');
+const xpFill = document.getElementById('xp-fill');
+const waterFill = document.getElementById('water-fill');
+const airFill = document.getElementById('air-fill');
+const barLabel = document.getElementById('bar-label');
+const bottomBar = document.getElementById('bottom-bar');
 
-const app = express();
-app.use(express.static(path.join(__dirname, 'public')));
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
+window.addEventListener('resize', () => {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+});
 
-const server = http.createServer(app);
-const wss = new WebSocket.Server({ server });
+function lerp(a, b, t) { return a + (b - a) * t; }
 
-const WORLD = { width: 6000, height: 6000 };
-const TICK_RATE = 30;
-const FOOD_COUNT = 500;
-const HOLE_COUNT = 60;
-const CRYSTAL_COUNT = 20;
+const isMobile = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0) || /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
 
-const ADMIN_PASSWORD = 'admin123';
-
-const VOLCANO = { x: 3000, y: 2700, r: 900 };
-
-function isInVolcano(x, y) {
-  return Math.hypot(x - VOLCANO.x, y - VOLCANO.y) < VOLCANO.r;
-}
-
-const BIOMES = [
-  { name: 'water',  x: 0,    y: 0,    w: 1500, h: 1800, color: '#1e3a5f' },
-  { name: 'snow',   x: 1500, y: 0,    w: 3000, h: 1800, color: '#c8d8e8' },
-  { name: 'water',  x: 4500, y: 0,    w: 1500, h: 1800, color: '#1e3a5f' },
-  { name: 'water',  x: 0,    y: 1800, w: 1000, h: 1800, color: '#1e3a5f' },
-  { name: 'forest', x: 1000, y: 1800, w: 4000, h: 1800, color: '#2d5a27' },
-  { name: 'water',  x: 5000, y: 1800, w: 1000, h: 1800, color: '#1e3a5f' },
-  { name: 'river',  x: 0,    y: 3600, w: 6000, h: 600,  color: '#3b7fb0' },
-  { name: 'water',  x: 0,    y: 4200, w: 1000, h: 1800, color: '#1e3a5f' },
-  { name: 'desert', x: 1000, y: 4200, w: 4000, h: 1800, color: '#c2a56b' },
-  { name: 'water',  x: 5000, y: 4200, w: 1000, h: 1800, color: '#1e3a5f' }
-];
-
-const RIVER_FLOW = { x: 1, y: 0 };
-
-function getBiomeAt(x, y) {
-  if (isInVolcano(x, y)) return { name: 'volcano', color: '#4a1818' };
-  for (const b of BIOMES) {
-    if (x >= b.x && x < b.x + b.w && y >= b.y && y < b.y + b.h) return b;
-  }
-  return BIOMES[0];
-}
-
-const HOLE_ENTER_SPEED = 100;
-const HOLE_EXIT_SPEED = 80;
-
-function resolveFoodCollision(p, f) {
-  if (p.level >= 6) return false;
-  const dx = p.x - f.x;
-  const dy = p.y - f.y;
-  const dist = Math.hypot(dx, dy);
-  const minDist = p.r * 0.8 + f.r * 0.8;
-
-  if (dist < minDist && dist > 0.001) {
-    const overlap = minDist - dist;
-    const nx = dx / dist;
-    const ny = dy / dist;
-    p.x += nx * overlap * 0.85;
-    p.y += ny * overlap * 0.85;
-    const vn = p.vx * nx + p.vy * ny;
-    if (vn < 0) { p.vx -= vn * nx * 0.9; p.vy -= vn * ny * 0.9; }
-    return true;
-  }
-  return false;
-}
-
-function resolveCrystalCollision(p, c) {
-  if (c.hp <= 0) return false;
-  if (p.level >= 6) return false;
-
-  const dx = p.x - c.x;
-  const dy = p.y - c.y;
-  const dist = Math.hypot(dx, dy);
-  const minDist = p.r * 0.85 + c.r * 0.85;
-
-  if (dist < minDist && dist > 0.001) {
-    const overlap = minDist - dist;
-    const nx = dx / dist;
-    const ny = dy / dist;
-
-    p.x += nx * overlap * 0.6;
-    p.y += ny * overlap * 0.6;
-
-    const pushStrength = 0.25;
-    c.vx -= nx * overlap * pushStrength;
-    c.vy -= ny * overlap * pushStrength;
-
-    const maxCrystalSpeed = 3.5;
-    const cSpeed = Math.hypot(c.vx, c.vy);
-    if (cSpeed > maxCrystalSpeed) {
-      c.vx = (c.vx / cSpeed) * maxCrystalSpeed;
-      c.vy = (c.vy / cSpeed) * maxCrystalSpeed;
-    }
-
-    const vn = p.vx * nx + p.vy * ny;
-    if (vn < 0) { p.vx -= vn * nx * 0.85; p.vy -= vn * ny * 0.85; }
-    return true;
-  }
-  return false;
-}
-
-const FOOD_TYPES = [
-  { name: 'berry',    color: '#e63946', r: 25, xp: 3,  emoji: '🍓', biome: 'forest',  minLevel: 1, bites: 1 },
-  { name: 'mushroom', color: '#d4a373', r: 30, xp: 4,  emoji: '🍄', biome: 'forest',  minLevel: 1, bites: 2 },
-  { name: 'apple',    color: '#ff0000', r: 30, xp: 4,  emoji: '🍎', biome: 'forest',  minLevel: 1, bites: 2 },
-  { name: 'banana',   color: '#ffd60a', r: 32, xp: 5,  emoji: '🍌', biome: 'desert',  minLevel: 2, bites: 2 },
-  { name: 'fish',     color: '#00b4d8', r: 32, xp: 5,  emoji: '🐟', biome: 'water',   minLevel: 2, bites: 2 },
-  { name: 'carrot',   color: '#ff8c00', r: 35, xp: 6,  emoji: '🥕', biome: 'forest',  minLevel: 3, bites: 3 },
-  { name: 'meat',     color: '#a0522d', r: 38, xp: 8,  emoji: '🍖', biome: 'snow',    minLevel: 3, bites: 3 },
-  { name: 'cactus',   color: '#2d6a4f', r: 36, xp: 7,  emoji: '🌵', biome: 'desert',  minLevel: 3, bites: 3 },
-  { name: 'ice',      color: '#a0e0ff', r: 42, xp: 10, emoji: '🧊', biome: 'snow',    minLevel: 4, bites: 4 },
-  { name: 'lava',     color: '#ff4500', r: 45, xp: 12, emoji: '🔥', biome: 'volcano', minLevel: 5, bites: 4 }
-];
-
-const ANIMALS = [
-  { name: 'Мышка',           r: 15,  speed: 12, color: '#a0a0a0', xpToNext: 10,  hp: 30,  damage: 5,  fov: 500 },
-  { name: 'Кролик',          r: 20,  speed: 12, color: '#d4a373', xpToNext: 25,  hp: 50,  damage: 8,  fov: 700 },
-  { name: 'Лиса',            r: 28,  speed: 12, color: '#e07a5f', xpToNext: 50,  hp: 80,  damage: 12, fov: 900 },
-  { name: 'Волк',            r: 38,  speed: 12, color: '#8d99ae', xpToNext: 100, hp: 120, damage: 18, fov: 1300 },
-  { name: 'Медведь',         r: 52,  speed: 10, color: '#6f4e37', xpToNext: 200, hp: 180, damage: 25, fov: 1500 },
-  { name: 'Дракон',          r: 300, speed: 8,  color: '#9b2226', xpToNext: 400, hp: 250, damage: 35, fov: 2000 },
-  { name: 'Король Драконов', r: 300, speed: 8,  color: '#ff4500', xpToNext: Infinity, hp: 500, damage: 50, fov: 3000 }
-];
-
-function getAnimalByLevel(level) {
-  return ANIMALS[Math.min(level - 1, ANIMALS.length - 1)];
-}
-
+let myId = null;
+let world = { width: 6000, height: 6000 };
 let players = {};
 let food = [];
 let holes = [];
+let biomes = [];
 let fireballs = [];
 let presents = [];
 let crystals = [];
 let meat = [];
+let trees = [];
+let volcano = { x: 3000, y: 2700, r: 900 };
 let arena = { x: 3000, y: 2700, r: 500, active: false };
-let nextId = 1;
+let mouse = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
+let camera = { x: 0, y: 0, zoom: 1 };
+let gameStarted = false;
+let isAdmin = false;
+let spectating = false;
+let spectateTarget = null;
 
-function broadcast(data) {
-  const msg = JSON.stringify(data);
-  wss.clients.forEach((c) => {
-    if (c.readyState === WebSocket.OPEN) c.send(msg);
-  });
-}
+const FOV_RADIUS = [500, 600, 700, 800, 900, 1000, 1200];
 
-function spawnFood() {
-  const type = FOOD_TYPES[Math.floor(Math.random() * FOOD_TYPES.length)];
-  let x, y;
-  if (type.biome === 'volcano') {
-    const a = Math.random() * Math.PI * 2;
-    const d = Math.random() * VOLCANO.r;
-    x = VOLCANO.x + Math.cos(a) * d;
-    y = VOLCANO.y + Math.sin(a) * d;
-  } else {
-    const biome = BIOMES.find(b => b.name === type.biome) || BIOMES[0];
-    x = biome.x + Math.random() * biome.w;
-    y = biome.y + Math.random() * biome.h;
+const chatInput = document.getElementById('chat-input');
+let chatOpen = false;
+
+const ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}`);
+function safeSend(data) {
+  if (ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify(data));
   }
-  return {
-    id: Math.random().toString(36).slice(2),
-    x, y, r: type.r, color: type.color, type: type.name,
-    emoji: type.emoji, xp: type.xp, minLevel: type.minLevel, biome: type.biome,
-    hp: type.bites, maxHp: type.bites, bites: type.bites,
-    vx: 0, vy: 0
-  };
 }
-for (let i = 0; i < FOOD_COUNT; i++) food.push(spawnFood());
 
-function spawnCrystal() {
-  let x, y;
-  do {
-    x = 200 + Math.random() * (WORLD.width - 400);
-    y = 200 + Math.random() * (WORLD.height - 400);
-  } while (isInVolcano(x, y));
-  return {
-    id: Math.random().toString(36).slice(2),
-    x, y, r: 60, hp: 50, maxHp: 50, respawnAt: 0, isMega: false,
-    vx: 0, vy: 0
-  };
-}
-function spawnMegaCrystal() {
-  const a = Math.random() * Math.PI * 2;
-  const d = Math.random() * (VOLCANO.r - 100);
-  const x = VOLCANO.x + Math.cos(a) * d;
-  const y = VOLCANO.y + Math.sin(a) * d;
-  return {
-    id: 'mega_' + Math.random().toString(36).slice(2),
-    x, y, r: 150, hp: 200, maxHp: 200, respawnAt: 0, isMega: true,
-    vx: 0, vy: 0
-  };
-}
-for (let i = 0; i < CRYSTAL_COUNT; i++) crystals.push(spawnCrystal());
-crystals.push(spawnMegaCrystal());
+ws.onmessage = (event) => {
+  const data = JSON.parse(event.data);
 
-function spawnHole() {
-  let x, y;
-  do {
-    x = 200 + Math.random() * (WORLD.width - 400);
-    y = 200 + Math.random() * (WORLD.height - 400);
-  } while (isInVolcano(x, y));
-  return { id: Math.random().toString(36).slice(2), x, y, r: 50 };
-}
-for (let i = 0; i < HOLE_COUNT; i++) holes.push(spawnHole());
+  if (data.type === 'init') {
+    myId = data.id; world = data.world; isAdmin = data.isAdmin || false;
+  }
+  else if (data.type === 'state_fast') {
+    players = data.players;
+    fireballs = data.fireballs || [];
 
-wss.on('connection', (ws) => {
-  const id = nextId++;
-  players[id] = {
-    id, name: 'Игрок ' + id,
-    x: Math.random() * WORLD.width,
-    y: Math.random() * WORLD.height,
-    vx: 0, vy: 0, angle: 0, r: 15, color: '#a0a0a0',
-    targetX: 0, targetY: 0,
-    moveDirX: 0, moveDirY: 0, movePower: 0,
-    score: 0, level: 1,
-    hp: 30, maxHp: 30, damage: 5,
-    water: 100, maxWater: 100,
-    air: 100, maxAir: 100,
-    lastBoost: 0, boostActive: false, boostAngle: 0,
-    dashVx: 0, dashVy: 0,
-    isAdmin: false, isSanta: false, santaSpeed: 8,
-    chatText: '', chatTime: 0,
-    eatenLevels: [], dragonsKilled: 0,
-    lastFire: 0, lastTail: 0, lastHit: 0,
-    lastFoodBite: 0, lastCrystalBite: 0,
-    auraColor: null, auraUntil: 0,
-    lastVolcanoDamage: 0, lastSantaGift: 0, lastWaterDrink: 0,
-    inHole: false, hidden: false, burning: 0, dead: false,
-    underwater: false,
-    swingActive: false, swingTime: 0, swingAngle: 0, stunned: 0, nextPawSide: 'left',
-    spectating: false, inArena: false,
-    previousScore: 0,
-    holeCooldown: 0,
-    lastAbility: 0,
-    holeState: 'outside',
-    holeTargetX: 0,
-    holeTargetY: 0
-  };
-  players[id].biome = getBiomeAt(players[id].x, players[id].y).name;
+    if (myId && players[myId]) {
+      isAdmin = players[myId].isAdmin || false;
+    }
 
-  console.log(`Игрок ${id} подключился`);
-  ws.send(JSON.stringify({ type: 'init', id, world: WORLD, isAdmin: players[id].isAdmin }));
+    if (myId && players[myId]) {
+      const me = players[myId];
+      bottomBar.style.display = 'block';
 
-  ws.on('message', (msg) => {
-    try {
-      const data = JSON.parse(msg);
-      if (data.type === 'setName' && players[id]) {
-        const name = String(data.name || '').slice(0, 16).trim();
-        if (name.length > 0) players[id].name = name;
-      }
-      if (data.type === 'move' && players[id]) {
-        const p = players[id];
-        if (data.dirX !== undefined) {
-          p.moveDirX = data.dirX || 0;
-          p.moveDirY = data.dirY || 0;
-          p.movePower = data.power || 0;
+      if (me.dead) {
+        barLabel.textContent = '💀 Ты погиб! Нажми «ИГРАТЬ»';
+        xpFill.style.width = '0%';
+        waterFill.style.width = '0%';
+        airFill.style.width = '100%';
+        const menu = document.getElementById('menu');
+        if (menu.style.display === 'none' || !menu.style.display) {
+          menu.style.display = 'flex';
+          gameStarted = false;
+          document.getElementById('startBtn').textContent = '▶ ИГРАТЬ';
+          hideMobileControls();
+        }
+      } else {
+        const xpToNext = [10, 25, 50, 100, 200, 400, Infinity][Math.min(me.level - 1, 6)];
+        const prevXP = me.level > 1 ? [0, 10, 25, 50, 100, 200, 400][me.level - 1] : 0;
+        let xpPercent = 0;
+        if (me.isSanta) { xpPercent = 100; barLabel.textContent = '🎅 Дед Мороз'; }
+        else if (xpToNext === Infinity) { xpPercent = 100; barLabel.textContent = '👑 Король Драконов'; }
+        else {
+          xpPercent = Math.max(0, Math.min(100, ((me.score - prevXP) / (xpToNext - prevXP)) * 100));
+          barLabel.textContent = `${Math.round(me.score)} XP (${xpToNext} XP Next Animal)`;
+        }
+        xpFill.style.width = xpPercent + '%';
+        const waterPercent = Math.max(0, (me.water / me.maxWater) * 100);
+        waterFill.style.width = waterPercent + '%';
+        if (me.level >= 6) waterFill.style.background = 'linear-gradient(90deg, #8b0000, #ff4500, #ff9500)';
+        else if (waterPercent < 30) waterFill.style.background = 'linear-gradient(90deg, #8b0000, #ff0000, #ff6666)';
+        else waterFill.style.background = 'linear-gradient(90deg, #0077b6, #00b4d8, #90e0ef)';
+
+        // 🌊 Воздух
+        const airPercent = Math.max(0, (me.air / me.maxAir) * 100);
+        airFill.style.width = airPercent + '%';
+        if (airPercent < 30) {
+          airFill.style.background = 'linear-gradient(90deg, #8b0000, #ff0000, #ff6666)';
         } else {
-          p.targetX = data.x;
-          p.targetY = data.y;
-          p.moveDirX = null;
+          airFill.style.background = 'linear-gradient(90deg, #0099ff, #66ccff, #99ddff)';
         }
       }
-      if (data.type === 'dive' && players[id]) {
-        const p = players[id];
-        if (p.dead) return;
-        if (p.level >= 6) return;
-        if (p.isSanta) return;
-        const biome = getBiomeAt(p.x, p.y);
-        if (biome.name !== 'water' && biome.name !== 'river') return;
-        if (p.air > 0) p.underwater = true;
-      }
-      if (data.type === 'diveRelease' && players[id]) {
-        const p = players[id];
-        p.underwater = false;
-      }
-      if (data.type === 'boost' && players[id]) {
-        const p = players[id];
-        if (p.dead) return;
-        if (p.holeState === 'inside') return;
+    }
+  }
+  else if (data.type === 'state_slow') {
+    food = data.food || [];
+    holes = data.holes || [];
+    biomes = data.biomes || [];
+    presents = data.presents || [];
+    crystals = data.crystals || [];
+    meat = data.meat || [];
+    trees = data.trees || [];
+    if (data.volcano) volcano = data.volcano;
+    if (data.arena) arena = data.arena;
+  }
+  else if (data.type === 'chat') {
+    if (data.system) showNotification(data.text);
+  }
+};
 
-        const now = Date.now();
-        if (now - p.lastBoost < 1000) return;
-        p.lastBoost = now;
-        p.boostActive = true;
-        setTimeout(() => { if (players[id]) players[id].boostActive = false; }, 500);
+canvas.addEventListener('mousemove', (e) => {
+  mouse.x = e.clientX; mouse.y = e.clientY;
+});
 
-        let dx = p.moveDirX || 0, dy = p.moveDirY || 0;
-        if (Math.hypot(dx, dy) < 0.01) {
-          dx = p.targetX - p.x; dy = p.targetY - p.y;
-        }
-        const dist = Math.hypot(dx, dy);
-        if (dist > 0.01) {
-          const power = 1.75;
-          p.dashVx = (dx / dist) * power;
-          p.dashVy = (dy / dist) * power;
-          p.boostAngle = Math.atan2(dy, dx);
-        }
-        p.score = Math.max(0, p.score - 1);
-      }
-      if (data.type === 'santa_gift' && players[id] && players[id].isSanta) {
-        const p = players[id];
-        const now = Date.now();
-        if (now - p.lastSantaGift < 500) return;
-        p.lastSantaGift = now;
-        presents.push({
-          id: Math.random().toString(36).slice(2),
-          x: p.x + (Math.random() - 0.5) * 200,
-          y: p.y + (Math.random() - 0.5) * 200,
-          r: 20, xp: 25 + Math.floor(Math.random() * 25)
-        });
-      }
-      if (data.type === 'santa_speed' && players[id] && players[id].isSanta) {
-        players[id].santaSpeed = Math.max(2, Math.min(30, parseFloat(data.value) || 8));
-      }
-      if (data.type === 'drink' && players[id]) {
-        const p = players[id];
-        if (p.dead) return;
-        const now = Date.now();
-        if (now - p.lastWaterDrink < 500) return;
-        const biome = getBiomeAt(p.x, p.y);
-        if (p.level >= 6) {
-          if (isInVolcano(p.x, p.y)) {
-            p.water = Math.min(p.maxWater, p.water + 30);
-            p.lastWaterDrink = now;
-          }
-        } else {
-          if (biome.name === 'water' || biome.name === 'river') {
-            p.water = Math.min(p.maxWater, p.water + 30);
-            p.lastWaterDrink = now;
-          }
-        }
-      }
-      if (data.type === 'ability' && players[id]) {
-        const p = players[id];
-        if (p.dead || p.hidden || p.isSanta) return;
-        const ability = getAbilityByLevel(p.level);
-        if (!ability) return;
-        const now = Date.now();
-        if (now - (p.lastAbility || 0) < ability.cooldown) return;
-        p.lastAbility = now;
-        const helpers = { fireballs, holes, stunBalls: [] };
-        const result = ability.use(p, players, WORLD, helpers);
-        if (result && result.message) {
-          ws.send(JSON.stringify({ type: 'chat', system: true, text: result.message }));
-        }
-      }
-      if (data.type === 'fire' && players[id]) {
-        const p = players[id];
-        if (p.level < 7 || p.hidden || p.dead) return;
-        const now = Date.now();
-        if (now - p.lastFire < 1000) return;
-        p.lastFire = now;
-        let dx = p.moveDirX || 0, dy = p.moveDirY || 0;
-        if (Math.hypot(dx, dy) < 0.01) { dx = p.targetX - p.x; dy = p.targetY - p.y; }
-        const dist = Math.hypot(dx, dy);
-        if (dist > 0.01) {
-          fireballs.push({
-            id: Math.random().toString(36).slice(2),
-            x: p.x, y: p.y,
-            vx: (dx / dist) * 15, vy: (dy / dist) * 15,
-            r: 20, owner: id, damage: 40, life: 60
-          });
-        }
-      }
-      if (data.type === 'tail' && players[id]) {
-        const p = players[id];
-        if (p.level < 7 || p.hidden || p.dead) return;
-        const now = Date.now();
-        if (now - p.lastTail < 3000) return;
-        p.lastTail = now;
-        for (const tid of Object.keys(players)) {
-          const t = players[tid];
-          if (!t || t.id === id || t.hidden || t.dead) continue;
-          const d = Math.hypot(t.x - p.x, t.y - p.y);
-          if (d < p.r + 150) {
-            t.hp -= 25;
-            const ang = Math.atan2(t.y - p.y, t.x - p.x);
-            t.x += Math.cos(ang) * 200;
-            t.y += Math.sin(ang) * 200;
-            if (t.hp <= 0) {
-              t.dead = true;
-              broadcast({ type: 'chat', system: true, text: `💀 Король убил ${t.name}` });
-            }
-          }
-        }
-      }
-      if (data.type === 'ascend' && players[id]) {
-        const p = players[id];
-        if (p.level === 6 && p.dragonsKilled >= 3) {
-          p.level = 7;
-          const king = ANIMALS[6];
-          p.r = king.r; p.color = king.color;
-          p.hp = king.hp; p.maxHp = king.hp; p.damage = king.damage;
-          p.score = 500;
-          broadcast({ type: 'chat', system: true, text: `👑 ${p.name} СТАЛ КОРОЛЁМ ДРАКОНОВ!` });
-        } else {
-          ws.send(JSON.stringify({ type: 'chat', system: true, text: `❌ Убей 3 драконов (у тебя ${p.dragonsKilled}/3)` }));
-        }
-      }
+let lastBoostSent = 0;
+canvas.addEventListener('mousedown', (e) => {
+  if (e.button !== 0) return;
+  if (!gameStarted || !myId || !players[myId]) return;
+  if (chatOpen) return;
+  if (players[myId].dead) return;
+  if (players[myId].holeState === 'inside') return;
 
-      if (data.type === 'admin_level' && players[id]) {
-        const p = players[id];
-        if (!p.isAdmin) {
-          ws.send(JSON.stringify({ type: 'chat', system: true, text: '❌ Только админ' }));
-          return;
-        }
-        if (p.dead || p.hidden || p.isSanta) return;
+  const now = Date.now();
+  if (now - lastBoostSent >= 300) {
+    ws.send(JSON.stringify({ type: 'boost' }));
+    lastBoostSent = now;
+  }
+});
 
-        const delta = parseInt(data.delta) || 0;
-        if (delta === 0) return;
+function showNotification(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  div.style.cssText = `
+    position: fixed; top: 80px; left: 50%; transform: translateX(-50%);
+    background: rgba(0,0,0,0.85); color: #ffd700; padding: 8px 16px;
+    border-radius: 5px; font-family: sans-serif; font-size: 14px;
+    z-index: 60; pointer-events: none;
+    border: 1px solid #ffd700; max-width: 600px; text-align: center;
+  `;
+  document.body.appendChild(div);
+  setTimeout(() => div.remove(), 3000);
+}
 
-        const currentLvl = p.level || 1;
-        let newLvl = currentLvl + delta;
-        if (newLvl < 1) newLvl = 1;
-        if (newLvl > 6) newLvl = 6;
-        if (newLvl === currentLvl) return;
+document.addEventListener('keydown', (e) => {
+  if (chatOpen) return;
+  if (myId && players[myId] && players[myId].dead) return;
+  if (e.key === 'f' || e.key === 'F' || e.key === 'а') {
+    if (myId && players[myId] && gameStarted) ws.send(JSON.stringify({ type: 'drink' }));
+  }
+  if (e.key === 'g' || e.key === 'G' || e.key === 'п') {
+    if (myId && players[myId] && players[myId].isSanta) ws.send(JSON.stringify({ type: 'santa_gift' }));
+  }
+  if (e.key === 'q' || e.key === 'Q' || e.key === 'й') {
+    if (myId && players[myId] && gameStarted) ws.send(JSON.stringify({ type: 'ability' }));
+  }
+  if (e.key === 'w' || e.key === 'W' || e.key === 'ц') {
+    if (myId && players[myId] && gameStarted && !e.repeat) {
+      const me = players[myId];
+      if (me.level >= 6 || me.isSanta) return;
+      ws.send(JSON.stringify({ type: 'dive' }));
+    }
+  }
+  if (e.key === 'e' || e.key === 'E' || e.key === 'у') {
+    if (myId && players[myId] && players[myId].level === 7) ws.send(JSON.stringify({ type: 'tail' }));
+  }
+  if (e.key === 'k' || e.key === 'K' || e.key === 'л') {
+    if (myId && players[myId] && players[myId].level === 6) ws.send(JSON.stringify({ type: 'ascend' }));
+  }
+  if (e.key === 'ArrowUp' && isAdmin && gameStarted) {
+    e.preventDefault();
+    ws.send(JSON.stringify({ type: 'admin_level', delta: 1 }));
+  }
+  if (e.key === 'ArrowDown' && isAdmin && gameStarted) {
+    e.preventDefault();
+    ws.send(JSON.stringify({ type: 'admin_level', delta: -1 }));
+  }
+});
 
-        p.level = newLvl;
-        const a = ANIMALS[newLvl - 1];
-        p.r = a.r; p.color = a.color;
-        p.hp = a.hp; p.maxHp = a.hp; p.damage = a.damage;
-        p.score = [10, 25, 50, 100, 200, 400][newLvl - 1] || 0;
+// 🌊 Отпускаем W — всплываем
+document.addEventListener('keyup', (e) => {
+  if (e.key === 'w' || e.key === 'W' || e.key === 'ц') {
+    if (myId && players[myId] && gameStarted) {
+      const me = players[myId];
+      if (me.level >= 6 || me.isSanta) return;
+      ws.send(JSON.stringify({ type: 'diveRelease' }));
+    }
+  }
+});
 
-        broadcast({ type: 'chat', system: true, text: `👑 ${p.name} переключился: ${a.name} (${newLvl} ур.)` });
-      }
+setInterval(() => {
+  if (!gameStarted || !myId || !players[myId]) return;
+  if (isMobile) return;
+  const me = players[myId];
+  if (me.dead) return;
+  const cx = canvas.width / 2, cy = canvas.height / 2;
+  const dx = mouse.x - cx, dy = mouse.y - cy;
+  const dist = Math.hypot(dx, dy);
+  const nx = dist > 0 ? dx / dist : 0;
+  const ny = dist > 0 ? dy / dist : 0;
+  const maxDist = Math.min(canvas.width, canvas.height) / 2;
+  const power = Math.min(1, dist / (maxDist * 0.6));
+  ws.send(JSON.stringify({ type: 'move', dirX: nx, dirY: ny, power: power }));
+}, 1000 / 30);
 
-      if (data.type === 'spawn' && players[id]) {
-        const p = players[id];
-        let x, y, biome, tries = 0;
-        do {
-          x = 200 + Math.random() * (WORLD.width - 400);
-          y = 200 + Math.random() * (WORLD.height - 400);
-          biome = getBiomeAt(x, y);
-          tries++;
-        } while ((biome.name === 'volcano' || biome.name === 'water' || biome.name === 'river') && tries < 100);
-
-        p.x = x; p.y = y;
-        p.level = 1;
-        const animal = ANIMALS[0];
-        p.r = animal.r; p.color = animal.color;
-        p.hp = animal.hp; p.maxHp = animal.hp; p.damage = animal.damage;
-        p.score = 0;
-        p.water = p.maxWater;
-        p.air = p.maxAir;
-        p.burning = 0;
-        p.dead = false;
-        p.spectating = false;
-        p.isSanta = false;
-        p.hidden = false;
-        p.inHole = null;
-        p.holeState = 'outside';
-        p.vx = 0; p.vy = 0;
-        p.dashVx = 0; p.dashVy = 0;
-        p.eatenLevels = [];
-        p.dragonsKilled = 0;
-        p.underwater = false;
-      }
-      if (data.type === 'respawn' && players[id]) {
-        const p = players[id];
-        p.dead = false;
-        p.spectating = false;
-        p.hp = 30; p.maxHp = 30;
-        p.water = 100; p.maxWater = 100;
-        p.air = 100; p.maxAir = 100;
-        p.score = 0; p.level = 1; p.r = 15;
-        p.color = '#a0a0a0'; p.damage = 5;
-        p.isSanta = false;
-        p.hidden = false;
-        p.inHole = null;
-        p.holeState = 'outside';
-        p.vx = 0; p.vy = 0;
-        p.dashVx = 0; p.dashVy = 0;
-        p.underwater = false;
-        const biome = BIOMES[Math.floor(Math.random() * BIOMES.length)];
-        p.x = biome.x + Math.random() * biome.w;
-        p.y = biome.y + Math.random() * biome.h;
-      }
-      if (data.type === 'spectate' && players[id]) {
-        players[id].spectating = true;
-        players[id].dead = true;
-      }
-      if (data.type === 'chat' && players[id]) {
-        const p = players[id];
-        const text = String(data.text || '').slice(0, 80).trim();
-        if (text.length === 0) return;
-
-        if (text === '/admin ' + ADMIN_PASSWORD) {
-          p.isAdmin = true;
-          ws.send(JSON.stringify({ type: 'chat', system: true, text: '👑 Ты теперь админ! Стрелки ↑ ↓ — смена уровня.' }));
-          return;
-        }
-        if (text === '/santa') {
-          if (!p.isAdmin) {
-            ws.send(JSON.stringify({ type: 'chat', system: true, text: '❌ Только админ' }));
-            return;
-          }
-          p.isSanta = true; p.level = 0;
-          p.r = 60; p.color = '#c0392b';
-          p.hp = 500; p.maxHp = 500;
-          broadcast({ type: 'chat', system: true, text: `🎅 АДМИН СТАЛ ДЕДОМ МОРОЗОМ!` });
-          return;
-        }
-        if (text.startsWith('/santaspeed ')) {
-          if (!p.isSanta) return;
-          const val = parseFloat(text.split(' ')[1]) || 8;
-          p.santaSpeed = Math.max(2, Math.min(30, val));
-          ws.send(JSON.stringify({ type: 'chat', system: true, text: `🎅 Скорость: ${p.santaSpeed}` }));
-          return;
-        }
-        if (text.startsWith('/')) {
-          const parts = text.split(' ');
-          const cmd = parts[0].toLowerCase();
-          if (!p.isAdmin) {
-            ws.send(JSON.stringify({ type: 'chat', system: true, text: '❌ Нет прав' }));
-            return;
-          }
-          if (cmd === '/help') ws.send(JSON.stringify({ type: 'chat', system: true, text: '👑 /kill /tp X Y /size N /level N /score N /clear /santa /santaspeed N | Стрелки ↑↓' }));
-          else if (cmd === '/kill') { delete players[id]; }
-          else if (cmd === '/tp' && parts.length === 3) { p.x = parseFloat(parts[1]) || 0; p.y = parseFloat(parts[2]) || 0; }
-          else if (cmd === '/size' && parts.length === 2) p.r = Math.max(5, Math.min(200, parseFloat(parts[1]) || 15));
-          else if (cmd === '/level' && parts.length === 2) {
-            const lvl = Math.max(1, Math.min(ANIMALS.length, parseInt(parts[1]) || 1));
-            p.level = lvl;
-            const a = ANIMALS[lvl - 1];
-            p.r = a.r; p.color = a.color; p.hp = a.hp; p.maxHp = a.hp; p.damage = a.damage;
-          }
-          else if (cmd === '/score' && parts.length === 2) p.score = Math.max(0, parseInt(parts[1]) || 0);
-          else if (cmd === '/clear') broadcast({ type: 'clear-chat' });
-          return;
-        }
-        p.chatText = text;
-        p.chatTime = Date.now();
-      }
-    } catch (e) {}
-  });
-
-  ws.on('close', () => {
-    delete players[id];
-    console.log(`Игрок ${id} отключился`);
+let selectedBiome = 'forest';
+document.querySelectorAll('.biome-buttons button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    selectedBiome = btn.dataset.biome;
+    document.querySelectorAll('.biome-buttons button').forEach(b => b.style.borderColor = '#fff');
+    btn.style.borderColor = '#ff0';
   });
 });
 
-// === ИГРОВОЙ ЦИКЛ ===
-let tickCount = 0;
-setInterval(() => {
-  tickCount++;
+document.getElementById('startBtn').addEventListener('click', () => {
+  if (!myId) return;
+  const nameInput = document.getElementById('name-input');
+  const name = nameInput.value.trim() || ('Игрок ' + myId);
+  ws.send(JSON.stringify({ type: 'setName', name }));
+  setTimeout(() => {
+    ws.send(JSON.stringify({ type: 'spawn', biome: selectedBiome }));
+  }, 100);
+  document.getElementById('menu').style.display = 'none';
+  gameStarted = true;
+  bottomBar.style.display = 'block';
+  showMobileControls();
+});
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !chatOpen && gameStarted) {
+    e.preventDefault();
+    chatOpen = true;
+    chatInput.style.display = 'block';
+    chatInput.value = '';
+    chatInput.focus();
+  } else if (e.key === 'Escape' && chatOpen) {
+    chatOpen = false;
+    chatInput.style.display = 'none';
+    chatInput.value = '';
+    chatInput.blur();
+  }
+});
+chatInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    const text = chatInput.value.trim();
+    if (text.length > 0 && myId) ws.send(JSON.stringify({ type: 'chat', text }));
+    chatInput.value = '';
+    chatOpen = false;
+    chatInput.style.display = 'none';
+    chatInput.blur();
+  }
+  if (e.key === 'Escape') {
+    chatInput.value = '';
+    chatOpen = false;
+    chatInput.style.display = 'none';
+    chatInput.blur();
+  }
+});
+
+function draw() {
+  ctx.fillStyle = '#0a0a1a';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  let focusX, focusY;
+  if (spectating && myId && players[myId] && players[myId].dead) {
+    const sorted = Object.values(players).filter(p => !p.dead && p.id !== myId).sort((a, b) => b.score - a.score);
+    if (sorted.length > 0) {
+      spectateTarget = sorted[0];
+      focusX = spectateTarget.x; focusY = spectateTarget.y;
+    }
+  } else if (myId && players[myId] && !players[myId].dead) {
+    const meP = players[myId];
+    focusX = meP.x;
+    focusY = meP.y;
+  } else {
+    focusX = 3000; focusY = 3000;
+  }
+
+  const nowMs = performance.now();
+  const dt = Math.min(50, nowMs - (window._lastDraw || nowMs)) / 1000;
+  window._lastDraw = nowMs;
 
   for (const id in players) {
-    if (!players[id]) continue;
     const p = players[id];
-    if (p.dead) continue;
+    if (!p || p.dead) continue;
 
-    if (p.hidden) p.hp = Math.min(p.maxHp, p.hp + 2);
-    else if (p.hp < p.maxHp) p.hp = Math.min(p.maxHp, p.hp + 0.3);
-
-    // 🌊 Логика кислорода
-    const currentBiomeDive = getBiomeAt(p.x, p.y);
-    const inWater = currentBiomeDive.name === 'water' || currentBiomeDive.name === 'river';
-
-    if (p.underwater && !inWater) {
-      p.underwater = false;
+    if (p.skipInterpolation || p.skipInterpolationFrames > 0 || p.holeState === 'entering') {
+      p.renderX = p.x;
+      p.renderY = p.y;
+      p.renderAngle = p.angle || 0;
+      p.skipInterpolation = false;
+      if (p.skipInterpolationFrames > 0) p.skipInterpolationFrames--;
+      continue;
     }
 
-    if (p.underwater) {
-      p.air -= 100 / (5 * TICK_RATE);
-      if (p.air <= 0) {
-        p.air = 0;
-        p.underwater = false;
-      }
+    if (p.renderX === undefined) {
+      p.renderX = p.x;
+      p.renderY = p.y;
+      p.renderAngle = p.angle || 0;
     } else {
-      p.air = Math.min(p.maxAir, p.air + 100 / (2 * TICK_RATE));
-    }
-    p.air = Math.max(0, Math.min(p.maxAir, p.air));
-
-    if (p.level >= 6 || p.isSanta) {
-      p.water = p.maxWater;
-    } else {
-      const biome = getBiomeAt(p.x, p.y);
-      if (biome.name === 'water' || biome.name === 'river') p.water = Math.min(p.maxWater, p.water + 0.5);
-      else p.water -= 0.1;
-      if (p.water <= 0) { p.hp -= 1; p.water = 0; }
-      p.water = Math.max(0, Math.min(p.maxWater, p.water));
-    }
-
-    if (isInVolcano(p.x, p.y) && !p.hidden && p.level < 6 && !p.isSanta) {
-      const now = Date.now();
-      if (!p.lastVolcanoDamage || now - p.lastVolcanoDamage >= 1000) {
-        p.lastVolcanoDamage = now;
-        p.hp -= 10;
-        p.burning = 3;
-      }
-    }
-    if (p.burning > 0 && p.level < 6 && !p.isSanta) {
-      p.burning -= 1 / TICK_RATE;
-      if (Math.random() < 0.1) p.hp -= 1;
-    }
-    if (p.hp <= 0) {
-      p.dead = true; p.hp = 0;
-
-      const lostMass = Math.floor(p.score / 3);
-      p.score -= lostMass;
-
-      const meatCount = Math.min(10, Math.max(3, Math.floor(p.score / 30)));
-      const meatPerDrop = Math.max(1, Math.floor(p.score / meatCount));
-
-      for (let i = 0; i < meatCount; i++) {
-        const angle = (i / meatCount) * Math.PI * 2 + Math.random() * 0.5;
-        const dist = 30 + Math.random() * 60;
-        meat.push({
-          id: Math.random().toString(36).slice(2),
-          x: p.x + Math.cos(angle) * dist,
-          y: p.y + Math.sin(angle) * dist,
-          r: 15 + Math.random() * 10,
-          xp: meatPerDrop,
-          hp: 2, maxHp: 2,
-          color: ['#8B0000', '#A52A2A', '#B22222', '#DC143C'][Math.floor(Math.random() * 4)],
-          emoji: '🍖',
-          vx: 0, vy: 0
-        });
-      }
-
-      broadcast({ type: 'chat', system: true, text: `💀 ${p.name} погиб! Выпало мяса: ${meatCount}` });
+      const smooth = 1 - Math.pow(0.001, dt * 30);
+      p.renderX = lerp(p.renderX, p.x, smooth);
+      p.renderY = lerp(p.renderY, p.y, smooth);
+      let angleDiff = (p.angle || 0) - p.renderAngle;
+      while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+      while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
+      p.renderAngle += angleDiff * smooth;
     }
   }
 
-  // === ДВИЖЕНИЕ ИГРОКОВ ===
-  for (const id in players) {
-    if (!players[id]) continue;
-    const p = players[id];
-    if (p.dead) continue;
+  const me = myId ? players[myId] : null;
+  let fovLevel = 500;
+  if (me) {
+    if (me.isSanta) fovLevel = 1500;
+    else fovLevel = FOV_RADIUS[Math.min((me.level || 1) - 1, 6)] || 500;
+  }
+  camera.zoom = (isMobile ? 450 : 700) / fovLevel;
+  if (camera.zoom < 0.25) camera.zoom = 0.25;
+  if (camera.zoom > 2.5) camera.zoom = 2.5;
 
-    // 🕳 ЗАХОД В НОРУ
-    if (p.holeState === 'entering') {
-      const dx = p.holeTargetX - p.x;
-      const dy = p.holeTargetY - p.y;
-      const dist = Math.hypot(dx, dy);
-      const step = HOLE_ENTER_SPEED / TICK_RATE;
+  const viewW = canvas.width / camera.zoom;
+  const viewH = canvas.height / camera.zoom;
+  camera.x = focusX - viewW / 2;
+  camera.y = focusY - viewH / 2;
+  ctx.save();
+  ctx.scale(camera.zoom, camera.zoom);
 
-      const aimX = p.moveDirX || 0;
-      const aimY = p.moveDirY || 0;
-      if (Math.hypot(aimX, aimY) > 0.01) {
-        const targetAngle = Math.atan2(aimY, aimX);
-        let diff = targetAngle - p.angle;
-        while (diff > Math.PI) diff -= Math.PI * 2;
-        while (diff < -Math.PI) diff += Math.PI * 2;
-        p.angle += diff * 0.3;
-      }
-
-      if (dist <= step) {
-        p.x = p.holeTargetX;
-        p.y = p.holeTargetY;
-        p.holeState = 'inside';
-        p.hidden = true;
-        p.vx = 0; p.vy = 0;
-        p.skipInterpolation = true;
-        p.skipInterpolationFrames = 3;
-      } else {
-        p.x += (dx / dist) * step;
-        p.y += (dy / dist) * step;
-      }
-      continue;
-    }
-
-    // 🕳 В НОРЕ
-    if (p.holeState === 'inside') {
-      p.hidden = true;
-      p.vx = 0; p.vy = 0;
-
-      const dirX = p.moveDirX || 0;
-      const dirY = p.moveDirY || 0;
-      const dirDist = Math.hypot(dirX, dirY);
-
-      if (dirDist > 0.01) {
-        const targetAngle = Math.atan2(dirY, dirX);
-        let diff = targetAngle - p.angle;
-        while (diff > Math.PI) diff -= Math.PI * 2;
-        while (diff < -Math.PI) diff += Math.PI * 2;
-        p.angle += diff * 0.25;
-      }
-
-      if (dirDist > 0.15 && p.movePower > 0.1) {
-        const nx = dirX / dirDist;
-        const ny = dirY / dirDist;
-        const step = HOLE_EXIT_SPEED / TICK_RATE;
-
-        const newX = p.x + nx * step;
-        const newY = p.y + ny * step;
-
-        const hole = holes.find(h => h.id === p.inHole);
-        if (hole) {
-          const distFromCenter = Math.hypot(newX - hole.x, newY - hole.y);
-          if (distFromCenter < hole.r * 0.85) {
-            p.x = newX;
-            p.y = newY;
-          } else {
-            p.holeState = 'exiting';
-            p.skipInterpolation = true;
-            p.skipInterpolationFrames = 3;
-          }
-        }
-      }
-      continue;
-    }
-
-    // 🕳 ВЫХОД ИЗ НОРЫ
-    if (p.holeState === 'exiting') {
-      const dirX = p.moveDirX || 0;
-      const dirY = p.moveDirY || 0;
-      const dirDist = Math.hypot(dirX, dirY);
-
-      if (dirDist < 0.1 || p.movePower < 0.05) {
-        p.holeState = 'inside';
-        continue;
-      }
-
-      const nx = dirX / dirDist;
-      const ny = dirY / dirDist;
-      p.angle = Math.atan2(ny, nx);
-      const step = HOLE_EXIT_SPEED / TICK_RATE;
-
-      p.x += nx * step;
-      p.y += ny * step;
-      p.hidden = true;
-      p.vx = 0; p.vy = 0;
-
-      const hole = holes.find(h => h.id === p.inHole);
-      if (hole) {
-        const distFromCenter = Math.hypot(p.x - hole.x, p.y - hole.y);
-        if (distFromCenter >= hole.r * 0.85) {
-          p.x = hole.x + nx * (hole.r + p.r * 0.3);
-          p.y = hole.y + ny * (hole.r + p.r * 0.3);
-          p.holeState = 'outside';
-          p.hidden = false;
-          p.inHole = null;
-          p.holeCooldown = Date.now() + 800;
-          p.vx = nx * 3;
-          p.vy = ny * 3;
-          p.skipInterpolation = true;
-          p.skipInterpolationFrames = 3;
-        }
-      } else {
-        p.holeState = 'outside';
-        p.hidden = false;
-        p.inHole = null;
-      }
-      continue;
-    }
-
-    // === ОБЫЧНОЕ ДВИЖЕНИЕ (вне норы) ===
-    if (p.hidden) continue;
-
-    if (p.stunned && Date.now() < p.stunned) {
-      p.vx *= 0.85; p.vy *= 0.85;
-      p.vx += p.dashVx; p.vy += p.dashVy;
-      p.dashVx *= 0.75; p.dashVy *= 0.75;
-      p.x += p.vx; p.y += p.vy;
-      const wo = p.r * 0.5;
-      p.x = Math.max(wo, Math.min(WORLD.width - wo, p.x));
-      p.y = Math.max(wo, Math.min(WORLD.height - wo, p.y));
-      continue;
-    }
-
-    const currentBiome = getBiomeAt(p.x, p.y);
-    p.biome = currentBiome.name;
-
-    let maxSpeed;
-    if (p.isSanta) maxSpeed = p.santaSpeed * 1.5;
-    else {
-      const animal = getAnimalByLevel(p.level);
-      maxSpeed = animal.speed * 0.9;
-      if (p.boostActive) maxSpeed *= 1.8;
-      if (currentBiome.name === 'water') maxSpeed *= 0.6;
-      if (currentBiome.name === 'river') maxSpeed *= 0.8;
-      if (currentBiome.name === 'snow') maxSpeed *= 0.8;
-      if (p.underwater) maxSpeed *= 0.5;
-    }
-
-    let riverBonusX = 0, riverBonusY = 0;
-    if (currentBiome.name === 'river') {
-      const flowLen = Math.hypot(RIVER_FLOW.x, RIVER_FLOW.y);
-      const flowNx = RIVER_FLOW.x / flowLen;
-      const flowNy = RIVER_FLOW.y / flowLen;
-      const vProj = (p.vx * flowNx + p.vy * flowNy);
-      const flowStrength = 2.5;
-      riverBonusX = flowNx * flowStrength * (vProj >= 0 ? 1 : -0.5);
-      riverBonusY = flowNy * flowStrength * (vProj >= 0 ? 1 : -0.5);
-    }
-
-    if (p.moveDirX !== null && p.moveDirX !== undefined) {
-      const power = p.movePower || 0;
-      if (power < 0.05) { p.vx *= 0.85; p.vy *= 0.85; }
-      else {
-        const targetVx = p.moveDirX * maxSpeed * power;
-        const targetVy = p.moveDirY * maxSpeed * power;
-        p.vx += (targetVx - p.vx) * 0.18;
-        p.vy += (targetVy - p.vy) * 0.18;
-      }
-    } else {
-      const dx = p.targetX - p.x;
-      const dy = p.targetY - p.y;
-      const dist = Math.hypot(dx, dy);
-      if (dist > 5) {
-        const targetVx = (dx / dist) * maxSpeed;
-        const targetVy = (dy / dist) * maxSpeed;
-        p.vx += (targetVx - p.vx) * 0.18;
-        p.vy += (targetVy - p.vy) * 0.18;
-      } else {
-        p.vx *= 0.85;
-        p.vy *= 0.85;
-      }
-    }
-
-    p.vx += riverBonusX;
-    p.vy += riverBonusY;
-
-    p.vx += p.dashVx; p.vy += p.dashVy;
-    p.dashVx *= 0.75; p.dashVy *= 0.75;
-    if (Math.abs(p.dashVx) < 0.05) p.dashVx = 0;
-    if (Math.abs(p.dashVy) < 0.05) p.dashVy = 0;
-
-    const v = Math.hypot(p.vx, p.vy);
-    const maxAllowed = maxSpeed * 2.5;
-    if (v > maxAllowed) {
-      p.vx = (p.vx / v) * maxAllowed;
-      p.vy = (p.vy / v) * maxAllowed;
-    }
-
-    p.x += p.vx; p.y += p.vy;
-
-    const wallOffset = p.r * 0.5;
-    p.x = Math.max(wallOffset, Math.min(WORLD.width - wallOffset, p.x));
-    p.y = Math.max(wallOffset, Math.min(WORLD.height - wallOffset, p.y));
-
-    // 🕳 АВТОЗАХОД В НОРУ (плавный)
-    if (p.holeState === 'outside' && p.level < 6 && p.r <= 60 &&
-        (!p.holeCooldown || Date.now() >= p.holeCooldown)) {
-      for (const h of holes) {
-        const d = Math.hypot(h.x - p.x, h.y - p.y);
-        if (d < h.r * 0.7) {
-          p.holeState = 'entering';
-          p.inHole = h.id;
-          p.holeTargetX = h.x;
-          p.holeTargetY = h.y;
-          p.vx = 0; p.vy = 0;
-          p.dashVx = 0; p.dashVy = 0;
-          break;
-        }
-      }
-    }
-
-    if (p.holeState === 'outside' && !p.dead) {
-      for (const f of food) {
-        if (f.hp <= 0) continue;
-        if (Math.abs(f.vx) > 0.15 || Math.abs(f.vy) > 0.15) continue;
-        resolveFoodCollision(p, f);
-      }
-      for (const m of meat) {
-        if (m.hp <= 0) continue;
-        if (Math.abs(m.vx) > 0.15 || Math.abs(m.vy) > 0.15) continue;
-        resolveFoodCollision(p, m);
-      }
-      for (const c of crystals) {
-        if (c.hp <= 0) continue;
-        resolveCrystalCollision(p, c);
-      }
-    }
-
-    let aimDx, aimDy;
-    if (p.moveDirX !== null && p.moveDirX !== undefined && (Math.abs(p.moveDirX) > 0.01 || Math.abs(p.moveDirY) > 0.01)) {
-      aimDx = p.moveDirX; aimDy = p.moveDirY;
-    } else {
-      aimDx = p.vx; aimDy = p.vy;
-    }
-    const aimDist = Math.hypot(aimDx, aimDy);
-    if (aimDist > 0.01) {
-      const targetAngle = Math.atan2(aimDy, aimDx);
-      let diff = targetAngle - p.angle;
-      while (diff > Math.PI) diff -= Math.PI * 2;
-      while (diff < -Math.PI) diff += Math.PI * 2;
-      const turnSpeed = 0.15;
-      const maxTurn = 0.25;
-      const turnAmount = Math.max(-maxTurn, Math.min(maxTurn, diff * turnSpeed));
-      p.angle += turnAmount;
-    }
+  for (const b of biomes) {
+    ctx.fillStyle = b.color;
+    ctx.fillRect(b.x - camera.x, b.y - camera.y, b.w, b.h);
   }
 
-  // 🍓 ФИЗИКА ЕДЫ
-  for (const f of food) {
-    if (f.hp <= 0) continue;
-    if (f.vx === undefined) { f.vx = 0; f.vy = 0; }
-    f.vx *= 0.94; f.vy *= 0.94;
-    if (Math.abs(f.vx) > 0.005 || Math.abs(f.vy) > 0.005) {
-      f.x += f.vx; f.y += f.vy;
-      const margin = f.r;
-      f.x = Math.max(margin, Math.min(WORLD.width - margin, f.x));
-      f.y = Math.max(margin, Math.min(WORLD.height - margin, f.y));
-    } else { f.vx = 0; f.vy = 0; }
+  const vx = volcano.x - camera.x;
+  const vy = volcano.y - camera.y;
+  ctx.beginPath(); ctx.arc(vx, vy, volcano.r, 0, Math.PI * 2);
+  ctx.fillStyle = '#8b4513'; ctx.fill();
+  ctx.strokeStyle = '#4a1818'; ctx.lineWidth = 6; ctx.stroke();
+  ctx.beginPath(); ctx.arc(vx, vy, volcano.r * 0.85, 0, Math.PI * 2);
+  ctx.fillStyle = '#ff6600'; ctx.fill();
+  ctx.beginPath(); ctx.arc(vx, vy, volcano.r * 0.6, 0, Math.PI * 2);
+  ctx.fillStyle = '#ff9500'; ctx.fill();
+  ctx.beginPath(); ctx.arc(vx, vy, volcano.r * 0.35, 0, Math.PI * 2);
+  ctx.fillStyle = '#ffcc00'; ctx.fill();
+  ctx.beginPath(); ctx.arc(vx, vy, volcano.r * 0.12, 0, Math.PI * 2);
+  ctx.fillStyle = '#ffffff'; ctx.fill();
+  const t = Date.now() / 1000;
+  for (let i = 0; i < 12; i++) {
+    const angle = (i / 12) * Math.PI * 2 + t * 0.3;
+    const dist = volcano.r * (0.3 + 0.5 * Math.abs(Math.sin(t + i)));
+    const bx = vx + Math.cos(angle) * dist;
+    const by = vy + Math.sin(angle) * dist;
+    ctx.beginPath(); ctx.arc(bx, by, 15 + Math.sin(t * 2 + i) * 5, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255, 200, 0, 0.6)'; ctx.fill();
   }
 
-  for (const m of meat) {
-    if (m.hp <= 0) continue;
-    if (m.vx === undefined) { m.vx = 0; m.vy = 0; }
-    m.vx *= 0.94; m.vy *= 0.94;
-    if (Math.abs(m.vx) > 0.005 || Math.abs(m.vy) > 0.005) {
-      m.x += m.vx; m.y += m.vy;
-      const margin = m.r;
-      m.x = Math.max(margin, Math.min(WORLD.width - margin, m.x));
-      m.y = Math.max(margin, Math.min(WORLD.height - margin, m.y));
-    } else { m.vx = 0; m.vy = 0; }
+  if (arena.active) {
+    const ax = arena.x - camera.x;
+    const ay = arena.y - camera.y;
+    ctx.beginPath(); ctx.arc(ax, ay, arena.r, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(255, 215, 0, 0.8)';
+    ctx.lineWidth = 6;
+    ctx.setLineDash([20, 15]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#ffd700';
+    ctx.fillText('⚔️ АРЕНА ⚔️', ax, ay - arena.r - 10);
+  }
+
+  ctx.strokeStyle = '#fff'; ctx.lineWidth = 4;
+  ctx.strokeRect(-camera.x, -camera.y, world.width, world.height);
+
+  for (const tr of trees) {
+    const tx = tr.x - camera.x;
+    const ty = tr.y - camera.y;
+    ctx.fillStyle = 'rgba(0,0,0,0.3)';
+    ctx.beginPath();
+    ctx.ellipse(tx, ty + tr.r * 0.7, tr.r * 0.9, tr.r * 0.3, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#4a2c17';
+    ctx.fillRect(tx - 6, ty - 4, 12, tr.r * 0.8);
+    ctx.beginPath();
+    ctx.arc(tx, ty, tr.r, 0, Math.PI * 2);
+    ctx.fillStyle = '#1e4d1a';
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(tx - tr.r * 0.3, ty - tr.r * 0.3, tr.r * 0.6, 0, Math.PI * 2);
+    ctx.fillStyle = '#2d6a27';
+    ctx.fill();
+  }
+
+  for (const h of holes) {
+    const hx = h.x - camera.x, hy = h.y - camera.y;
+    const grad = ctx.createRadialGradient(hx, hy, h.r * 0.4, hx, hy, h.r * 1.5);
+    grad.addColorStop(0, 'rgba(0,0,0,0)');
+    grad.addColorStop(0.6, 'rgba(0,0,0,0.6)');
+    grad.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath(); ctx.arc(hx, hy, h.r * 1.5, 0, Math.PI * 2); ctx.fill();
+
+    const innerGrad = ctx.createRadialGradient(hx, hy, 0, hx, hy, h.r);
+    innerGrad.addColorStop(0, '#2a1a0a');
+    innerGrad.addColorStop(0.8, '#1a0f05');
+    innerGrad.addColorStop(1, '#000');
+    ctx.fillStyle = innerGrad;
+    ctx.beginPath(); ctx.arc(hx, hy, h.r, 0, Math.PI * 2); ctx.fill();
+
+    ctx.strokeStyle = '#8b6f47'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(hx, hy, h.r, 0, Math.PI * 2); ctx.stroke();
+    ctx.strokeStyle = '#555'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.arc(hx, hy, h.r * 0.8, 0, Math.PI * 2); ctx.stroke();
   }
 
   for (const c of crystals) {
     if (c.hp <= 0) continue;
-    if (c.vx === undefined) { c.vx = 0; c.vy = 0; }
-    c.vx *= 0.96;
-    c.vy *= 0.96;
-    if (Math.abs(c.vx) > 0.01 || Math.abs(c.vy) > 0.01) {
-      c.x += c.vx;
-      c.y += c.vy;
-      const margin = c.r;
-      c.x = Math.max(margin, Math.min(WORLD.width - margin, c.x));
-      c.y = Math.max(margin, Math.min(WORLD.height - margin, c.y));
+    const cx = c.x - camera.x, cy = c.y - camera.y;
+    const glow = ctx.createRadialGradient(cx, cy, 0, cx, cy, c.r * 1.5);
+    if (c.isMega) {
+      glow.addColorStop(0, 'rgba(255, 100, 0, 0.7)');
+      glow.addColorStop(1, 'rgba(255, 100, 0, 0)');
     } else {
-      c.vx = 0;
-      c.vy = 0;
+      glow.addColorStop(0, 'rgba(0, 100, 255, 0.6)');
+      glow.addColorStop(1, 'rgba(0, 100, 255, 0)');
     }
+    ctx.fillStyle = glow;
+    ctx.beginPath(); ctx.arc(cx, cy, c.r * 1.5, 0, Math.PI * 2); ctx.fill();
+    const grad = ctx.createRadialGradient(cx - c.r * 0.3, cy - c.r * 0.3, c.r * 0.1, cx, cy, c.r);
+    if (c.isMega) {
+      grad.addColorStop(0, '#ffdd55'); grad.addColorStop(0.5, '#ff6600'); grad.addColorStop(1, '#8b0000');
+    } else {
+      grad.addColorStop(0, '#5bc0ff'); grad.addColorStop(0.6, '#0066cc'); grad.addColorStop(1, '#003d80');
+    }
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    for (let i = 0; i < 8; i++) {
+      const angle = (i / 8) * Math.PI * 2 - Math.PI / 8;
+      const px = cx + Math.cos(angle) * c.r;
+      const py = cy + Math.sin(angle) * c.r;
+      if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = c.isMega ? '#ffdd00' : '#00ff88';
+    ctx.lineWidth = c.isMega ? 6 : 3;
+    ctx.stroke();
+    const w = c.r * 1.5, h = c.isMega ? 6 : 3;
+    const barY = cy - c.r - (c.isMega ? 18 : 8);
+    ctx.fillStyle = 'rgba(0,0,0,0.7)';
+    ctx.fillRect(cx - w / 2, barY, w, h);
+    ctx.fillStyle = c.isMega ? '#ffdd00' : '#00ff88';
+    ctx.fillRect(cx - w / 2, barY, w * (c.hp / c.maxHp), h);
   }
 
-  for (let i = holes.length - 1; i >= 0; i--) {
-    if (holes[i].temp && Date.now() > holes[i].expiresAt) {
-      holes.splice(i, 1);
+  for (const f of food) {
+    const fx = f.x - camera.x, fy = f.y - camera.y;
+    ctx.fillStyle = 'rgba(0,0,0,0.3)';
+    ctx.beginPath(); ctx.ellipse(fx, fy + f.r * 0.7, f.r * 0.9, f.r * 0.3, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(fx, fy, f.r, 0, Math.PI * 2);
+    ctx.fillStyle = f.color; ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,0.4)'; ctx.lineWidth = 1.5; ctx.stroke();
+    if (f.maxHp && f.maxHp > 1) {
+      const w = f.r * 1.6, h = 3;
+      ctx.fillStyle = 'rgba(0,0,0,0.6)';
+      ctx.fillRect(fx - w / 2, fy - f.r - 6, w, h);
+      ctx.fillStyle = '#00ff00';
+      ctx.fillRect(fx - w / 2, fy - f.r - 6, w * (f.hp / f.maxHp), h);
     }
+    ctx.font = `${f.r * 1.1}px serif`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(f.emoji || '🍓', fx, fy + 1);
   }
 
-  // === ПОЕДАНИЕ ===
-  for (const id in players) {
-    if (!players[id]) continue;
-    const p = players[id];
-    if (p.hidden || p.isSanta || p.dead) continue;
-    if (p.holeState !== 'outside') continue;
-
-    // 🍓 ЕДА (нельзя есть под водой)
-    for (let i = food.length - 1; i >= 0; i--) {
-      if (p.underwater) break;
-      const f = food[i];
-      if (f.hp <= 0) continue;
-      const distToFood = Math.hypot(p.x - f.x, p.y - f.y);
-      const hitDist = (p.level >= 6) ? p.r + f.r * 0.9 : p.r * 1.0 + f.r * 1.0;
-
-      if (distToFood < hitDist) {
-        if (p.level < f.minLevel) continue;
-        const now = Date.now();
-        if (!p.lastFoodBite || now - p.lastFoodBite >= 350) {
-          p.lastFoodBite = now;
-          const isDragon = p.level >= 6;
-          if (isDragon) f.hp = 0; else f.hp -= 1;
-          const nx = (f.x - p.x) / (distToFood || 1);
-          const ny = (f.y - p.y) / (distToFood || 1);
-          const power = isDragon ? 1.2 : 0.5;
-          f.vx += nx * power; f.vy += ny * power;
-          const recoil = isDragon ? 0.3 : 1.2;
-          p.vx -= nx * recoil; p.vy -= ny * recoil;
-          p.score += f.xp || 1;
-          p.hp = Math.min(p.maxHp, p.hp + 1);
-          if (isDragon || f.hp <= 0) {
-            food.splice(i, 1);
-            food.push(spawnFood());
-          }
-          const currentAnimal = getAnimalByLevel(p.level);
-          if (p.score >= currentAnimal.xpToNext && p.level < 6) {
-            p.level += 1;
-            const nextAnimal = getAnimalByLevel(p.level);
-            p.r = nextAnimal.r; p.color = nextAnimal.color;
-            p.hp = nextAnimal.hp; p.maxHp = nextAnimal.hp; p.damage = nextAnimal.damage;
-            broadcast({ type: 'chat', system: true, text: `🎉 ${p.name} стал ${nextAnimal.name}!` });
-          }
-        }
-      }
+  for (const m of meat) {
+    const mx = m.x - camera.x;
+    const my = m.y - camera.y;
+    ctx.fillStyle = 'rgba(0,0,0,0.4)';
+    ctx.beginPath(); ctx.ellipse(mx, my + m.r * 0.7, m.r * 0.9, m.r * 0.3, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(mx, my, m.r, 0, Math.PI * 2);
+    ctx.fillStyle = m.color; ctx.fill();
+    ctx.strokeStyle = '#4a0000'; ctx.lineWidth = 2; ctx.stroke();
+    if (m.maxHp > 1) {
+      const w = m.r * 1.6, h = 4;
+      const barY = my - m.r - 8;
+      ctx.fillStyle = 'rgba(0,0,0,0.7)';
+      ctx.fillRect(mx - w / 2, barY, w, h);
+      ctx.fillStyle = '#ff3333';
+      ctx.fillRect(mx - w / 2, barY, w * (m.hp / m.maxHp), h);
     }
-
-    // 🍖 МЯСО (нельзя есть под водой)
-    for (let i = meat.length - 1; i >= 0; i--) {
-      if (p.underwater) break;
-      const m = meat[i];
-      if (m.hp <= 0) continue;
-      const distToMeat = Math.hypot(p.x - m.x, p.y - m.y);
-      const hitDist = (p.level >= 6) ? p.r + m.r * 0.9 : p.r * 1.0 + m.r * 1.0;
-
-      if (distToMeat < hitDist) {
-        const now = Date.now();
-        if (!p.lastFoodBite || now - p.lastFoodBite >= 300) {
-          p.lastFoodBite = now;
-          const isDragon = p.level >= 6;
-          if (isDragon) m.hp = 0; else m.hp -= 1;
-          const nx = (m.x - p.x) / (distToMeat || 1);
-          const ny = (m.y - p.y) / (distToMeat || 1);
-          const power = isDragon ? 1.2 : 0.5;
-          m.vx += nx * power; m.vy += ny * power;
-          const recoil = isDragon ? 0.3 : 1.2;
-          p.vx -= nx * recoil; p.vy -= ny * recoil;
-          p.score += Math.ceil(m.xp / m.maxHp);
-          p.hp = Math.min(p.maxHp, p.hp + 2);
-          if (isDragon || m.hp <= 0) meat.splice(i, 1);
-          const currentAnimal = getAnimalByLevel(p.level);
-          if (p.score >= currentAnimal.xpToNext && p.level < 6) {
-            p.level += 1;
-            const nextAnimal = getAnimalByLevel(p.level);
-            p.r = nextAnimal.r; p.color = nextAnimal.color;
-            p.hp = nextAnimal.hp; p.maxHp = nextAnimal.hp; p.damage = nextAnimal.damage;
-            broadcast({ type: 'chat', system: true, text: `🎉 ${p.name} стал ${nextAnimal.name}!` });
-          }
-        }
-      }
-    }
-
-    // 🎁 ПОДАРКИ (нельзя есть под водой)
-    for (let i = presents.length - 1; i >= 0; i--) {
-      if (p.underwater) break;
-      const pr = presents[i];
-      if (Math.hypot(p.x - pr.x, p.y - pr.y) < p.r + pr.r) {
-        p.score += pr.xp;
-        p.hp = Math.min(p.maxHp, p.hp + 5);
-        presents.splice(i, 1);
-        broadcast({ type: 'chat', system: true, text: `🎁 ${p.name} получил подарок (+${pr.xp} XP)!` });
-      }
-    }
+    ctx.font = `${m.r * 1.2}px serif`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('🍖', mx, my + 1);
   }
 
-  // 💎 КРИСТАЛЛЫ (можно есть под водой)
-  for (const id in players) {
-    if (!players[id]) continue;
-    const p = players[id];
-    if (p.hidden || p.dead) continue;
-    if (p.holeState !== 'outside') continue;
-    for (const c of crystals) {
-      if (c.hp <= 0) continue;
-      if (Math.hypot(p.x - c.x, p.y - c.y) < p.r + c.r * 0.95) {
-        const now = Date.now();
-        if (!p.lastCrystalBite || now - p.lastCrystalBite >= 500) {
-          p.lastCrystalBite = now;
-          c.hp -= 1;
-          if (c.isMega) {
-            p.hp = Math.min(p.maxHp, p.hp + 50);
-            p.water = Math.min(p.maxWater, p.water + 100);
-            p.score += 50;
-          } else {
-            p.hp = Math.min(p.maxHp, p.hp + 15);
-            p.water = Math.min(p.maxWater, p.water + 20);
-            p.score += 5;
-          }
-
-          if (c.isMega) {
-            p.auraColor = 'orange';
-            p.auraUntil = now + 2000;
-          } else {
-            p.auraColor = 'blue';
-            p.auraUntil = now + 1500;
-          }
-
-          if (c.hp <= 0) {
-            if (c.isMega) {
-              const a = Math.random() * Math.PI * 2;
-              const d = Math.random() * (VOLCANO.r - 100);
-              c.x = VOLCANO.x + Math.cos(a) * d;
-              c.y = VOLCANO.y + Math.sin(a) * d;
-              c.hp = c.maxHp; c.respawnAt = 0;
-              c.vx = 0; c.vy = 0;
-              broadcast({ type: 'chat', system: true, text: `💎 ${p.name} СЪЕЛ МЕГА-КРИСТАЛЛ!` });
-            } else {
-              c.respawnAt = Date.now() + 15000;
-            }
-          }
-        }
-      }
-    }
+  for (const pr of presents) {
+    ctx.font = '40px serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('🎁', pr.x - camera.x, pr.y - camera.y);
   }
 
-  const now = Date.now();
-  for (const c of crystals) {
-    if (c.hp <= 0 && c.respawnAt && now >= c.respawnAt) {
-      if (c.isMega) {
-        const a = Math.random() * Math.PI * 2;
-        const d = Math.random() * (VOLCANO.r - 100);
-        c.x = VOLCANO.x + Math.cos(a) * d;
-        c.y = VOLCANO.y + Math.sin(a) * d;
-        c.hp = c.maxHp; c.respawnAt = 0;
-        c.vx = 0; c.vy = 0;
+  for (const fb of fireballs) {
+    const fx = fb.x - camera.x, fy = fb.y - camera.y;
+    const glow = ctx.createRadialGradient(fx, fy, 0, fx, fy, fb.r * 2);
+    glow.addColorStop(0, 'rgba(255, 255, 0, 0.9)');
+    glow.addColorStop(0.5, 'rgba(255, 100, 0, 0.6)');
+    glow.addColorStop(1, 'rgba(255, 0, 0, 0)');
+    ctx.fillStyle = glow;
+    ctx.beginPath(); ctx.arc(fx, fy, fb.r * 2, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(fx, fy, fb.r, 0, Math.PI * 2);
+    ctx.fillStyle = '#ff6600'; ctx.fill();
+  }
+
+  const sorted = Object.values(players).sort((a, b) => b.score - a.score);
+  for (const p of sorted) {
+    if (p.dead) continue;
+    const x = (p.renderX !== undefined ? p.renderX : p.x) - camera.x;
+    const y = (p.renderY !== undefined ? p.renderY : p.y) - camera.y;
+    if (p.hidden && p.id != myId) continue;
+
+    // 🫧 Пузырьки если нырнул
+    if (p.underwater) {
+      ctx.save();
+      ctx.globalAlpha = 0.85;
+      const bubbleR = p.r * 1.6;
+      const bubbleGrad = ctx.createRadialGradient(x, y, 0, x, y, bubbleR);
+      bubbleGrad.addColorStop(0, 'rgba(150, 220, 255, 0.95)');
+      bubbleGrad.addColorStop(0.7, 'rgba(80, 170, 255, 0.8)');
+      bubbleGrad.addColorStop(1, 'rgba(30, 100, 200, 0.5)');
+      ctx.fillStyle = bubbleGrad;
+      ctx.beginPath();
+      ctx.arc(x, y, bubbleR, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+      ctx.lineWidth = 3;
+      ctx.stroke();
+      const time = Date.now() / 500;
+      for (let i = 0; i < 4; i++) {
+        const angle = (i / 4) * Math.PI * 2 + time;
+        const dist = p.r * 0.6;
+        const bx = x + Math.cos(angle) * dist;
+        const by = y + Math.sin(angle) * dist;
+        ctx.beginPath();
+        ctx.arc(bx, by, p.r * 0.28, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+        ctx.fill();
+      }
+      const smallY = y - p.r * 0.7 - Math.sin(time * 3) * p.r * 0.2;
+      ctx.beginPath();
+      ctx.arc(x + p.r * 0.5, smallY, p.r * 0.15, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.75)';
+      ctx.fill();
+      ctx.restore();
+      ctx.font = 'bold 14px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.strokeStyle = '#000';
+      ctx.lineWidth = 3;
+      ctx.fillStyle = '#fff';
+      ctx.strokeText(p.name, x, y - p.r - 24);
+      ctx.fillText(p.name, x, y - p.r - 24);
+      continue;
+    }
+
+    // ✨ АУРА
+    if (p.auraColor && p.auraUntil && Date.now() < p.auraUntil) {
+      const remain = p.auraUntil - Date.now();
+      const alpha = Math.min(1, remain / 500);
+      const pulse = 1 + Math.sin(Date.now() / 100) * 0.15;
+      const auraR = p.r * 2.5 * pulse;
+
+      const gradient = ctx.createRadialGradient(x, y, p.r * 0.5, x, y, auraR);
+      if (p.auraColor === 'orange') {
+        gradient.addColorStop(0, `rgba(255, 150, 50, ${0.7 * alpha})`);
+        gradient.addColorStop(0.5, `rgba(255, 100, 0, ${0.4 * alpha})`);
+        gradient.addColorStop(1, `rgba(255, 50, 0, 0)`);
       } else {
-        let x, y;
-        do {
-          x = 200 + Math.random() * (WORLD.width - 400);
-          y = 200 + Math.random() * (WORLD.height - 400);
-        } while (isInVolcano(x, y));
-        c.x = x; c.y = y; c.hp = c.maxHp; c.respawnAt = 0;
-        c.vx = 0; c.vy = 0;
+        gradient.addColorStop(0, `rgba(100, 200, 255, ${0.7 * alpha})`);
+        gradient.addColorStop(0.5, `rgba(50, 150, 255, ${0.4 * alpha})`);
+        gradient.addColorStop(1, `rgba(0, 100, 255, 0)`);
       }
+      ctx.fillStyle = gradient;
+      ctx.beginPath();
+      ctx.arc(x, y, auraR, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // 🕳 В НОРЕ
+    if (p.holeState === 'inside' || p.holeState === 'entering' || p.holeState === 'exiting') {
+      if (p.id == myId) {
+        ctx.globalAlpha = 0.85;
+        const hiddenSize = p.level === 7 ? p.r * 4.0 : p.r * 2.6;
+        if (p.isSanta) drawSkin(ctx, x, y, hiddenSize, 'santa', p.renderAngle !== undefined ? p.renderAngle : p.angle);
+        else drawSkin(ctx, x, y, hiddenSize, p.level, p.renderAngle !== undefined ? p.renderAngle : p.angle);
+        ctx.globalAlpha = 1;
+      } else {
+        ctx.globalAlpha = 0.35;
+        const hiddenSize = p.level === 7 ? p.r * 4.0 : p.r * 2.6;
+        if (p.isSanta) drawSkin(ctx, x, y, hiddenSize, 'santa', p.renderAngle !== undefined ? p.renderAngle : p.angle);
+        else drawSkin(ctx, x, y, hiddenSize, p.level, p.renderAngle !== undefined ? p.renderAngle : p.angle);
+        ctx.globalAlpha = 1;
+      }
+      if (p.id == myId && p.hp !== undefined && p.maxHp !== undefined) {
+        const barWidth = p.r * 2, barHeight = 5;
+        const barX = x - barWidth / 2, barY = y - p.r - 18;
+        ctx.fillStyle = 'rgba(0,0,0,0.7)';
+        ctx.fillRect(barX, barY, barWidth, barHeight);
+        const hpPercent = Math.max(0, p.hp / p.maxHp);
+        const hpColor = hpPercent > 0.5 ? '#00ff00' : hpPercent > 0.25 ? '#ffff00' : '#ff0000';
+        ctx.fillStyle = hpColor;
+        ctx.fillRect(barX, barY, barWidth * hpPercent, barHeight);
+        ctx.strokeStyle = '#fff'; ctx.lineWidth = 1;
+        ctx.strokeRect(barX, barY, barWidth, barHeight);
+      }
+      continue;
+    }
+
+    const skinSize = p.level === 7 ? p.r * 4.0 : p.r * 2.6;
+    if (p.isSanta) drawSkin(ctx, x, y, skinSize, 'santa', p.renderAngle !== undefined ? p.renderAngle : p.angle);
+    else drawSkin(ctx, x, y, skinSize, p.level, p.renderAngle !== undefined ? p.renderAngle : p.angle);
+
+    if (p.level === 5 && p.swingActive) {
+      const PR = Math.max(0.1, Math.abs(p.r || 1));
+      const angle = p.renderAngle !== undefined ? p.renderAngle : (p.angle || 0);
+      const DURATION = 150;
+      const elapsed = Date.now() - (p.swingTime || 0);
+      const tt = Math.max(0, Math.min(1, elapsed / DURATION));
+      const side = p.nextPawSide || 'left';
+      const sideMul = side === 'left' ? -1 : 1;
+      const pawAngle = angle + sideMul * (Math.PI / 3.2);
+      const reach = PR * (0.9 + tt * 0.7);
+      const alpha = tt < 0.7 ? 1 : 1 - (tt - 0.7) / 0.3;
+      const pawX = x + Math.cos(pawAngle) * reach;
+      const pawY = y + Math.sin(pawAngle) * reach;
+
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      if (tt < 0.5) {
+        const waveProgress = tt / 0.5;
+        const waveR = PR * (0.6 + waveProgress * 1.2);
+        ctx.beginPath();
+        ctx.arc(pawX, pawY, waveR, 0, Math.PI * 2);
+        ctx.strokeStyle = `rgba(255, 220, 100, ${1 - waveProgress})`;
+        ctx.lineWidth = 5 * (1 - waveProgress);
+        ctx.stroke();
+      }
+      ctx.translate(pawX, pawY);
+      ctx.rotate(pawAngle);
+      ctx.beginPath();
+      ctx.arc(3, 3, PR * 0.6, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(0,0,0,0.35)';
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(0, 0, PR * 0.6, 0, Math.PI * 2);
+      ctx.fillStyle = '#6f4e37';
+      ctx.fill();
+      ctx.strokeStyle = '#3d2a1a';
+      ctx.lineWidth = 4;
+      ctx.stroke();
+      for (let c = -1; c <= 1; c++) {
+        ctx.beginPath();
+        ctx.arc(PR * 0.42, c * PR * 0.3, PR * 0.13, 0, Math.PI * 2);
+        ctx.fillStyle = '#fff';
+        ctx.fill();
+        ctx.strokeStyle = '#3d2a1a';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+
+    ctx.font = 'bold 14px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 3;
+
+    if (p.isAdmin) {
+      const hue = (Date.now() / 20) % 360;
+      const gradient = ctx.createLinearGradient(x - 50, 0, x + 50, 0);
+      gradient.addColorStop(0, `hsl(${hue}, 100%, 60%)`);
+      gradient.addColorStop(0.5, `hsl(${(hue + 180) % 360}, 100%, 60%)`);
+      gradient.addColorStop(1, `hsl(${hue}, 100%, 60%)`);
+      ctx.fillStyle = '#ff0000';
+      ctx.fillText('[DEV]', x - 30, y - p.r - 24);
+      ctx.fillStyle = gradient;
+      ctx.fillText(p.name, x + 15, y - p.r - 24);
+    } else {
+      ctx.fillStyle = '#fff';
+      ctx.strokeText(p.name, x, y - p.r - 24);
+      ctx.fillText(p.name, x, y - p.r - 24);
+    }
+
+    if (p.hp !== undefined && p.maxHp !== undefined) {
+      const barWidth = p.r * 2, barHeight = 5;
+      const barX = x - barWidth / 2, barY = y - p.r - 18;
+      ctx.fillStyle = 'rgba(0,0,0,0.7)';
+      ctx.fillRect(barX, barY, barWidth, barHeight);
+      const hpPercent = Math.max(0, p.hp / p.maxHp);
+      const hpColor = hpPercent > 0.5 ? '#00ff00' : hpPercent > 0.25 ? '#ffff00' : '#ff0000';
+      ctx.fillStyle = hpColor;
+      ctx.fillRect(barX, barY, barWidth * hpPercent, barHeight);
+      ctx.strokeStyle = '#fff'; ctx.lineWidth = 1;
+      ctx.strokeRect(barX, barY, barWidth, barHeight);
+    }
+
+    if (p.chatText) {
+      const tx = x, ty = y - p.r - 45;
+      ctx.font = 'bold 16px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      const metrics = ctx.measureText(p.chatText);
+      const textWidth = metrics.width + 16;
+      ctx.fillStyle = 'rgba(0,0,0,0.75)';
+      ctx.fillRect(tx - textWidth / 2, ty - 12, textWidth, 24);
+      ctx.strokeStyle = '#fff'; ctx.lineWidth = 1;
+      ctx.strokeRect(tx - textWidth / 2, ty - 12, textWidth, 24);
+      ctx.fillStyle = '#fff';
+      ctx.fillText(p.chatText, tx, ty);
     }
   }
 
-  const ids = Object.keys(players);
-  for (let a = 0; a < ids.length; a++) {
-    for (let b = a + 1; b < ids.length; b++) {
-      const p1 = players[ids[a]];
-      const p2 = players[ids[b]];
-      if (!p1 || !p2 || p1.hidden || p2.hidden || p1.dead || p2.dead) continue;
-      if (p1.holeState !== 'outside' || p2.holeState !== 'outside') continue;
-      if (p1.isSanta || p2.isSanta) continue;
-      const dist = Math.hypot(p1.x - p2.x, p1.y - p2.y);
-      const bigger = p1.r > p2.r ? p1 : p2;
-      const smaller = p1.r > p2.r ? p2 : p1;
-      if (bigger.r / smaller.r >= 1.2 && dist < bigger.r) {
-        if (smaller.underwater) continue;   // 🫧 Под водой неуязвим
-        const tnow = Date.now();
-        if (!smaller.lastHit || tnow - smaller.lastHit >= 500) {
-          smaller.lastHit = tnow;
-          smaller.hp -= bigger.damage;
-          if (smaller.hp <= 0) {
-            bigger.r = Math.sqrt(bigger.r * bigger.r + smaller.r * smaller.r);
-            bigger.score += Math.floor(smaller.score / 2);
-            if (!bigger.eatenLevels.includes(smaller.level)) bigger.eatenLevels.push(smaller.level);
-            if (smaller.level === 6 && bigger.level === 6) {
-              bigger.dragonsKilled = (bigger.dragonsKilled || 0) + 1;
-              broadcast({ type: 'chat', system: true, text: `🐉 ${bigger.name} убил дракона! (${bigger.dragonsKilled}/3)` });
-            }
-            broadcast({ type: 'chat', system: true, text: `⚔️ ${bigger.name} съел ${smaller.name}` });
-            delete players[smaller.id];
-          }
-        }
-      }
-    }
+  ctx.restore();
+
+  if (myId && players[myId] && !players[myId].dead && !spectating) {
+    const p = players[myId];
+    const animalNames = ['Мышка', 'Кролик', 'Лиса', 'Волк', 'Медведь', 'Дракон', 'Король Драконов'];
+    const animalName = p.isSanta ? '🎅 Дед Мороз' : animalNames[Math.min(p.level - 1, animalNames.length - 1)];
+    const boostCd = p.lastBoost ? Math.max(0, 500 - (Date.now() - p.lastBoost)) : 0;
+    const boostStatus = boostCd > 0 ? `⏳ ${(boostCd / 1000).toFixed(1)}s` : '⚡ READY';
+    const adminTag = isAdmin ? ' 👑ADMIN (↑↓ уровень)' : '';
+    let quest = '';
+    if (p.level === 6) quest = ` | 🐉 Драконы: ${p.dragonsKilled || 0}/3 (K)`;
+    else if (p.level === 7) quest = ' | Q=Огонь E=Хвост';
+    else if (p.isSanta) quest = ' | G=Подарок';
+    const abilityNames = ['🕳 Норка', '🐰 Прыжок', '🦊 Рывок', '🐺 Вой', '🐻 Рык', '🔥 Огонь', '👑 Хвост'];
+    const abilityName = p.isSanta ? '🎁 Подарок' : (abilityNames[Math.min(p.level - 1, abilityNames.length - 1)] || '');
+    hud.textContent = `Ур: ${p.isSanta ? '🎅' : p.level} (${animalName}) | HP: ${Math.max(0, Math.round(p.hp))}/${p.maxHp} | Q: ${abilityName} | ЛКМ: ${boostStatus} | F=Пить${adminTag}${quest}`;
   }
 
-  for (let i = fireballs.length - 1; i >= 0; i--) {
-    const fb = fireballs[i];
-    fb.x += fb.vx; fb.y += fb.vy; fb.life -= 1;
-    for (const id in players) {
-      const p = players[id];
-      if (!p || p.id === fb.owner || p.hidden || p.isSanta || p.dead) continue;
-      if (p.holeState !== 'outside') continue;
-      if (Math.hypot(p.x - fb.x, p.y - fb.y) < p.r + fb.r) {
-        p.hp -= fb.damage;
-        const ang = Math.atan2(p.y - fb.y, p.x - fb.x);
-        p.x += Math.cos(ang) * 100; p.y += Math.sin(ang) * 100;
-        fireballs.splice(i, 1);
-        if (p.hp <= 0) { p.dead = true; broadcast({ type: 'chat', system: true, text: `🔥 ${p.name} сгорел!` }); }
-        break;
-      }
-    }
-    if (fb.life <= 0) fireballs.splice(i, 1);
-    if (fb.x < 0 || fb.x > WORLD.width || fb.y < 0 || fb.y > WORLD.height) fireballs.splice(i, 1);
+  if (spectating && spectateTarget) {
+    ctx.font = 'bold 20px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#ff00ff';
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 3;
+    ctx.strokeText(`👁 SPECTATOR: ${spectateTarget.name}`, canvas.width / 2, 40);
+    ctx.fillText(`👁 SPECTATOR: ${spectateTarget.name}`, canvas.width / 2, 40);
   }
 
-  const now2 = Date.now();
+  leaderboard.innerHTML = '<b>Топ:</b><br>' +
+    sorted.slice(0, 5).map((p, i) =>
+      `${i + 1}. ${p.isSanta ? '🎅' : ''} ${p.name} — ${p.score}`
+    ).join('<br>');
+
+  mmCtx.clearRect(0, 0, 160, 160);
+  for (const b of biomes) {
+    mmCtx.fillStyle = b.color;
+    mmCtx.fillRect(b.x / world.width * 160, b.y / world.height * 160, b.w / world.width * 160, b.h / world.height * 160);
+  }
+  mmCtx.beginPath();
+  mmCtx.arc(volcano.x / world.width * 160, volcano.y / world.height * 160, volcano.r / world.width * 160, 0, Math.PI * 2);
+  mmCtx.fillStyle = '#ff6600'; mmCtx.fill();
+  mmCtx.fillStyle = '#000';
+  for (const h of holes) {
+    mmCtx.beginPath();
+    mmCtx.arc(h.x / world.width * 160, h.y / world.height * 160, 2, 0, Math.PI * 2);
+    mmCtx.fill();
+  }
+  for (const c of crystals) {
+    if (c.hp <= 0) continue;
+    mmCtx.fillStyle = c.isMega ? '#ffdd00' : '#00b4ff';
+    mmCtx.beginPath();
+    mmCtx.arc(c.x / world.width * 160, c.y / world.height * 160, c.isMega ? 5 : 3, 0, Math.PI * 2);
+    mmCtx.fill();
+  }
   for (const id in players) {
-    if (players[id].chatTime && now2 - players[id].chatTime > 3000) {
-      players[id].chatText = '';
-      players[id].chatTime = 0;
-    }
+    const p = players[id];
+    if (p.hidden && id != myId) continue;
+    if (p.dead) continue;
+    mmCtx.beginPath();
+    mmCtx.arc(p.x / world.width * 160, p.y / world.height * 160, id == myId ? 4 : 3, 0, Math.PI * 2);
+    mmCtx.fillStyle = id == myId ? '#fff' : p.color;
+    mmCtx.fill();
   }
 
-  const fastState = JSON.stringify({ type: 'state_fast', players, fireballs });
-  wss.clients.forEach((c) => { if (c.readyState === WebSocket.OPEN) c.send(fastState); });
+  requestAnimationFrame(draw);
+}
 
-  if (tickCount % 6 === 0) {
-    const slowState = JSON.stringify({
-      type: 'state_slow',
-      food, holes, biomes: BIOMES, presents, crystals, meat,
-      volcano: VOLCANO, arena
-    });
-    wss.clients.forEach((c) => { if (c.readyState === WebSocket.OPEN) c.send(slowState); });
+function showMobileControls() {
+  if (isMobile) {
+    document.getElementById('joystick').style.display = 'block';
+    document.getElementById('mobile-buttons').style.display = 'flex';
   }
-}, 1000 / TICK_RATE);
+}
+function hideMobileControls() {
+  document.getElementById('joystick').style.display = 'none';
+  document.getElementById('mobile-buttons').style.display = 'none';
+}
 
-const PORT = process.env.PORT || 3000;
-server.listen(PORT, '0.0.0.0', () => {
-  console.log(`Сервер запущен: http://localhost:${PORT}`);
-  console.log(`👑 Админ-пароль: ${ADMIN_PASSWORD}`);
-  console.log(`🗺 Карта: ${WORLD.width}x${WORLD.height}`);
-  console.log(`🌊 Ныряние на W (уровни 1-5) + неуязвимость`);
-});
+const joystickEl = document.getElementById('joystick-base');
+const stickEl = document.getElementById('joystick-stick');
+let joyActive = false;
+let joyDir = { x: 0, y: 0, power: 0 };
+
+function getJoyCenter() {
+  const r = joystickEl.getBoundingClientRect();
+  return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+}
+
+joystickEl.addEventListener('touchstart', (e) => {
+  e.preventDefault();
+  joyActive = true;
+  updateJoystick(e.touches[0]);
+}, { passive: false });
+
+joystickEl.addEventListener('touchmove', (e) => {
+  e.preventDefault();
+  if (!joyActive) return;
+  updateJoystick(e.touches[0]);
+}, { passive: false });
+
+joystickEl.addEventListener('touchend', (e) => {
+  e.preventDefault();
+  joyActive = false;
+  joyDir = { x: 0, y: 0, power: 0 };
+  stickEl.style.transform = 'translate(0, 0)';
+}, { passive: false });
+
+function updateJoystick(touch) {
+  const center = getJoyCenter();
+  let dx = touch.clientX - center.x;
+  let dy = touch.clientY - center.y;
+  const dist = Math.hypot(dx, dy);
+  const maxDist = 55;
+  const clamped = Math.min(dist, maxDist);
+  const nx = dist > 0 ? dx / dist : 0;
+  const ny = dist > 0 ? dy / dist : 0;
+  stickEl.style.transform = `translate(${nx * clamped}px, ${ny * clamped}px)`;
+  joyDir.x = nx;
+  joyDir.y = ny;
+  joyDir.power = clamped / maxDist;
+}
+
+setInterval(() => {
+  if (!isMobile || !gameStarted || !myId || !players[myId]) return;
+  if (joyDir.power < 0.05) return;
+  ws.send(JSON.stringify({ type: 'move', dirX: joyDir.x, dirY: joyDir.y, power: joyDir.power }));
+}, 1000 / 30);
+
+document.getElementById('btn-ability').addEventListener('touchstart', (e) => {
+  e.preventDefault();
+  if (myId && players[myId] && gameStarted) ws.send(JSON.stringify({ type: 'ability' }));
+}, { passive: false });
+
+document.getElementById('btn-boost').addEventListener('touchstart', (e) => {
+  e.preventDefault();
+  if (myId && players[myId] && gameStarted) ws.send(JSON.stringify({ type: 'boost' }));
+}, { passive: false });
+
+document.getElementById('btn-drink').addEventListener('touchstart', (e) => {
+  e.preventDefault();
+  if (myId && players[myId] && gameStarted) ws.send(JSON.stringify({ type: 'drink' }));
+}, { passive: false });
+
+draw();
