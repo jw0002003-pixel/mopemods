@@ -22,7 +22,7 @@ function lerp(a, b, t) { return a + (b - a) * t; }
 const isMobile = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0) || /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
 
 let myId = null;
-let world = { width: 4000, height: 4000 };
+let world = { width: 6000, height: 6000 };
 let players = {};
 let food = [];
 let holes = [];
@@ -31,8 +31,9 @@ let fireballs = [];
 let presents = [];
 let crystals = [];
 let meat = [];
-let volcano = { x: 2000, y: 2000, r: 600 };
-let arena = { x: 2000, y: 2000, r: 400, active: false };
+let trees = [];
+let volcano = { x: 3000, y: 2700, r: 900 };
+let arena = { x: 3000, y: 2700, r: 500, active: false };
 let mouse = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
 let camera = { x: 0, y: 0, zoom: 1 };
 let gameStarted = false;
@@ -46,7 +47,6 @@ const chatInput = document.getElementById('chat-input');
 let chatOpen = false;
 
 const ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}`);
-// Безопасная отправка — не шлёт, если WS закрыт
 function safeSend(data) {
   if (ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify(data));
@@ -104,6 +104,7 @@ ws.onmessage = (event) => {
     presents = data.presents || [];
     crystals = data.crystals || [];
     meat = data.meat || [];
+    trees = data.trees || [];
     if (data.volcano) volcano = data.volcano;
     if (data.arena) arena = data.arena;
   }
@@ -144,6 +145,7 @@ function showNotification(text) {
   setTimeout(() => div.remove(), 3000);
 }
 
+// === КЛАВИШИ ===
 document.addEventListener('keydown', (e) => {
   if (chatOpen) return;
   if (myId && players[myId] && players[myId].dead) return;
@@ -162,12 +164,23 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'k' || e.key === 'K' || e.key === 'л') {
     if (myId && players[myId] && players[myId].level === 6) ws.send(JSON.stringify({ type: 'ascend' }));
   }
+
+  // 👑 АДМИН: стрелка ВВЕРХ — уровень +1
+  if (e.key === 'ArrowUp' && isAdmin && gameStarted) {
+    e.preventDefault();
+    ws.send(JSON.stringify({ type: 'admin_level', delta: 1 }));
+  }
+  // 👑 АДМИН: стрелка ВНИЗ — уровень -1
+  if (e.key === 'ArrowDown' && isAdmin && gameStarted) {
+    e.preventDefault();
+    ws.send(JSON.stringify({ type: 'admin_level', delta: -1 }));
+  }
 });
 
 // === УПРАВЛЕНИЕ МЫШЬЮ (только ПК) ===
 setInterval(() => {
   if (!gameStarted || !myId || !players[myId]) return;
-  if (isMobile) return; // на мобильном — только джойстик
+  if (isMobile) return;
   const me = players[myId];
   if (me.dead) return;
   const cx = canvas.width / 2, cy = canvas.height / 2;
@@ -235,6 +248,9 @@ chatInput.addEventListener('keydown', (e) => {
   }
 });
 
+// ============================
+//          ОТРИСОВКА
+// ============================
 function draw() {
   ctx.fillStyle = '#0a0a1a';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -251,7 +267,7 @@ function draw() {
     focusX = meP.x;
     focusY = meP.y;
   } else {
-    focusX = 2000; focusY = 2000;
+    focusX = 3000; focusY = 3000;
   }
 
   const nowMs = performance.now();
@@ -282,23 +298,24 @@ function draw() {
     if (me.isSanta) fovLevel = 1500;
     else fovLevel = FOV_RADIUS[Math.min((me.level || 1) - 1, 6)] || 500;
   }
-  // На мобильном — обзор шире
   camera.zoom = (isMobile ? 450 : 700) / fovLevel;
   if (camera.zoom < 0.25) camera.zoom = 0.25;
   if (camera.zoom > 2.5) camera.zoom = 2.5;
 
   const viewW = canvas.width / camera.zoom;
   const viewH = canvas.height / camera.zoom;
- camera.x = focusX - viewW / 2;
-camera.y = focusY - viewH / 2;
+  camera.x = focusX - viewW / 2;
+  camera.y = focusY - viewH / 2;
   ctx.save();
   ctx.scale(camera.zoom, camera.zoom);
 
+  // === БИОМЫ ===
   for (const b of biomes) {
     ctx.fillStyle = b.color;
     ctx.fillRect(b.x - camera.x, b.y - camera.y, b.w, b.h);
   }
 
+  // === ВУЛКАН ===
   const vx = volcano.x - camera.x;
   const vy = volcano.y - camera.y;
   ctx.beginPath(); ctx.arc(vx, vy, volcano.r, 0, Math.PI * 2);
@@ -322,6 +339,7 @@ camera.y = focusY - viewH / 2;
     ctx.fillStyle = 'rgba(255, 200, 0, 0.6)'; ctx.fill();
   }
 
+  // === АРЕНА ===
   if (arena.active) {
     const ax = arena.x - camera.x;
     const ay = arena.y - camera.y;
@@ -331,49 +349,6 @@ camera.y = focusY - viewH / 2;
     ctx.setLineDash([20, 15]);
     ctx.stroke();
     ctx.setLineDash([]);
-    // Анимация удара лапой (для медведя) — ОДНА ЛАПА, ЧЕРЕДОВАНИЕ
-const swingElapsed = Date.now() - (p.swingTime || 0);
-if (p.level === 5 && swingElapsed < 80) {
-  const PR = Math.max(0.1, Math.abs(p.r || 1));
-  const angle = p.renderAngle !== undefined ? p.renderAngle : (p.angle || 0);
-
-  // Мгновенное появление и исчезновение (80 мс)
-  const fade = 1 - swingElapsed / 80;
-
-  // Сторона: left или right (с сервера)
-  const side = p.nextPawSide || 'left';
-  const pawAngle = side === 'left' ? (angle - Math.PI / 3) : (angle + Math.PI / 3);
-  const reach = PR * 1.4;
-
-  ctx.globalAlpha = fade;
-
-  const pawX = x + Math.cos(pawAngle) * reach;
-  const pawY = y + Math.sin(pawAngle) * reach;
-
-  ctx.save();
-  ctx.translate(pawX, pawY);
-  ctx.rotate(pawAngle);
-
-  // Круг лапы
-  ctx.beginPath();
-  ctx.arc(0, 0, PR * 0.6, 0, Math.PI * 2);
-  ctx.fillStyle = '#6f4e37';
-  ctx.fill();
-  ctx.strokeStyle = '#3d2a1a';
-  ctx.lineWidth = 4;
-  ctx.stroke();
-
-  // Когти
-  for (let c = -1; c <= 1; c++) {
-    ctx.beginPath();
-    ctx.arc(PR * 0.4, c * PR * 0.3, PR * 0.12, 0, Math.PI * 2);
-    ctx.fillStyle = '#fff';
-    ctx.fill();
-  }
-  ctx.restore();
-
-  ctx.globalAlpha = 1;
-}
     ctx.textAlign = 'center';
     ctx.fillStyle = '#ffd700';
     ctx.fillText('⚔️ АРЕНА ⚔️', ax, ay - arena.r - 10);
@@ -382,6 +357,30 @@ if (p.level === 5 && swingElapsed < 80) {
   ctx.strokeStyle = '#fff'; ctx.lineWidth = 4;
   ctx.strokeRect(-camera.x, -camera.y, world.width, world.height);
 
+  // === ДЕРЕВЬЯ (лес) ===
+  for (const tr of trees) {
+    const tx = tr.x - camera.x;
+    const ty = tr.y - camera.y;
+    // тень
+    ctx.fillStyle = 'rgba(0,0,0,0.3)';
+    ctx.beginPath();
+    ctx.ellipse(tx, ty + tr.r * 0.7, tr.r * 0.9, tr.r * 0.3, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // ствол
+    ctx.fillStyle = '#4a2c17';
+    ctx.fillRect(tx - 6, ty - 4, 12, tr.r * 0.8);
+    // крона
+    ctx.beginPath();
+    ctx.arc(tx, ty, tr.r, 0, Math.PI * 2);
+    ctx.fillStyle = '#1e4d1a';
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(tx - tr.r * 0.3, ty - tr.r * 0.3, tr.r * 0.6, 0, Math.PI * 2);
+    ctx.fillStyle = '#2d6a27';
+    ctx.fill();
+  }
+
+  // === НОРЫ ===
   for (const h of holes) {
     const hx = h.x - camera.x, hy = h.y - camera.y;
     const grad = ctx.createRadialGradient(hx, hy, h.r * 0.4, hx, hy, h.r * 1.5);
@@ -404,6 +403,7 @@ if (p.level === 5 && swingElapsed < 80) {
     ctx.beginPath(); ctx.arc(hx, hy, h.r * 0.8, 0, Math.PI * 2); ctx.stroke();
   }
 
+  // === КРИСТАЛЛЫ ===
   for (const c of crystals) {
     if (c.hp <= 0) continue;
     const cx = c.x - camera.x, cy = c.y - camera.y;
@@ -444,6 +444,7 @@ if (p.level === 5 && swingElapsed < 80) {
     ctx.fillRect(cx - w / 2, barY, w * (c.hp / c.maxHp), h);
   }
 
+  // === ЕДА ===
   for (const f of food) {
     const fx = f.x - camera.x, fy = f.y - camera.y;
     ctx.fillStyle = 'rgba(0,0,0,0.3)';
@@ -463,6 +464,7 @@ if (p.level === 5 && swingElapsed < 80) {
     ctx.fillText(f.emoji || '🍓', fx, fy + 1);
   }
 
+  // === МЯСО ===
   for (const m of meat) {
     const mx = m.x - camera.x;
     const my = m.y - camera.y;
@@ -484,12 +486,14 @@ if (p.level === 5 && swingElapsed < 80) {
     ctx.fillText('🍖', mx, my + 1);
   }
 
+  // === ПОДАРКИ ===
   for (const pr of presents) {
     ctx.font = '40px serif';
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillText('🎁', pr.x - camera.x, pr.y - camera.y);
   }
 
+  // === ОГНЕННЫЕ ШАРЫ ===
   for (const fb of fireballs) {
     const fx = fb.x - camera.x, fy = fb.y - camera.y;
     const glow = ctx.createRadialGradient(fx, fy, 0, fx, fy, fb.r * 2);
@@ -502,6 +506,7 @@ if (p.level === 5 && swingElapsed < 80) {
     ctx.fillStyle = '#ff6600'; ctx.fill();
   }
 
+  // === ИГРОКИ ===
   const sorted = Object.values(players).sort((a, b) => b.score - a.score);
   for (const p of sorted) {
     if (p.dead) continue;
@@ -521,84 +526,72 @@ if (p.level === 5 && swingElapsed < 80) {
       continue;
     }
 
-       const skinSize = p.level === 7 ? p.r * 4.0 : p.r * 2.6;
+    const skinSize = p.level === 7 ? p.r * 4.0 : p.r * 2.6;
     if (p.isSanta) drawSkin(ctx, x, y, skinSize, 'santa', p.renderAngle !== undefined ? p.renderAngle : p.angle);
     else drawSkin(ctx, x, y, skinSize, p.level, p.renderAngle !== undefined ? p.renderAngle : p.angle);
 
-// 🐾 Анимация удара лапой медведя
-if (p.level === 5 && p.swingActive) {
-  const PR = Math.max(0.1, Math.abs(p.r || 1));
-  const angle = p.renderAngle !== undefined ? p.renderAngle : (p.angle || 0);
+    // 🐾 Анимация удара лапой медведя
+    if (p.level === 5 && p.swingActive) {
+      const PR = Math.max(0.1, Math.abs(p.r || 1));
+      const angle = p.renderAngle !== undefined ? p.renderAngle : (p.angle || 0);
 
-  // Длительность анимации (мс) — должна совпадать с setTimeout в abilities.js
-  const DURATION = 150;
-  const elapsed = Date.now() - (p.swingTime || 0);
-  const t = Math.max(0, Math.min(1, elapsed / DURATION)); // 0 → 1
+      const DURATION = 150;
+      const elapsed = Date.now() - (p.swingTime || 0);
+      const t = Math.max(0, Math.min(1, elapsed / DURATION));
 
-  // Сторона: left или right
-  const side = p.nextPawSide || 'left';
-  const sideMul = side === 'left' ? -1 : 1;
+      const side = p.nextPawSide || 'left';
+      const sideMul = side === 'left' ? -1 : 1;
 
-  // Угол лапы — с «разлётом» вперёд
-  const pawAngle = angle + sideMul * (Math.PI / 3.2);
+      const pawAngle = angle + sideMul * (Math.PI / 3.2);
+      const reach = PR * (0.9 + t * 0.7);
+      const alpha = t < 0.7 ? 1 : 1 - (t - 0.7) / 0.3;
 
-  // Дистанция вылета: 0.9r → 1.6r (удар «выбрасывает» лапу)
-  const reach = PR * (0.9 + t * 0.7);
+      const pawX = x + Math.cos(pawAngle) * reach;
+      const pawY = y + Math.sin(pawAngle) * reach;
 
-  // Затухание в конце
-  const alpha = t < 0.7 ? 1 : 1 - (t - 0.7) / 0.3;
+      ctx.save();
+      ctx.globalAlpha = alpha;
 
-  const pawX = x + Math.cos(pawAngle) * reach;
-  const pawY = y + Math.sin(pawAngle) * reach;
+      if (t < 0.5) {
+        const waveProgress = t / 0.5;
+        const waveR = PR * (0.6 + waveProgress * 1.2);
+        ctx.beginPath();
+        ctx.arc(pawX, pawY, waveR, 0, Math.PI * 2);
+        ctx.strokeStyle = `rgba(255, 220, 100, ${1 - waveProgress})`;
+        ctx.lineWidth = 5 * (1 - waveProgress);
+        ctx.stroke();
+      }
 
-  ctx.save();
-  ctx.globalAlpha = alpha;
+      ctx.translate(pawX, pawY);
+      ctx.rotate(pawAngle);
 
-  // 💥 Вспышка-ударная волна при появлении
-  if (t < 0.5) {
-    const waveProgress = t / 0.5;
-    const waveR = PR * (0.6 + waveProgress * 1.2);
-    ctx.beginPath();
-    ctx.arc(pawX, pawY, waveR, 0, Math.PI * 2);
-    ctx.strokeStyle = `rgba(255, 220, 100, ${1 - waveProgress})`;
-    ctx.lineWidth = 5 * (1 - waveProgress);
-    ctx.stroke();
-  }
+      ctx.beginPath();
+      ctx.arc(3, 3, PR * 0.6, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(0,0,0,0.35)';
+      ctx.fill();
 
-  // 🐾 Сама лапа
-  ctx.translate(pawX, pawY);
-  ctx.rotate(pawAngle);
+      ctx.beginPath();
+      ctx.arc(0, 0, PR * 0.6, 0, Math.PI * 2);
+      ctx.fillStyle = '#6f4e37';
+      ctx.fill();
+      ctx.strokeStyle = '#3d2a1a';
+      ctx.lineWidth = 4;
+      ctx.stroke();
 
-  // Тень лапы
-  ctx.beginPath();
-  ctx.arc(3, 3, PR * 0.6, 0, Math.PI * 2);
-  ctx.fillStyle = 'rgba(0,0,0,0.35)';
-  ctx.fill();
+      for (let c = -1; c <= 1; c++) {
+        ctx.beginPath();
+        ctx.arc(PR * 0.42, c * PR * 0.3, PR * 0.13, 0, Math.PI * 2);
+        ctx.fillStyle = '#fff';
+        ctx.fill();
+        ctx.strokeStyle = '#3d2a1a';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      }
 
-  // Основной круг лапы
-  ctx.beginPath();
-  ctx.arc(0, 0, PR * 0.6, 0, Math.PI * 2);
-  ctx.fillStyle = '#6f4e37';
-  ctx.fill();
-  ctx.strokeStyle = '#3d2a1a';
-  ctx.lineWidth = 4;
-  ctx.stroke();
+      ctx.restore();
+    }
 
-  // Когти
-  for (let c = -1; c <= 1; c++) {
-    ctx.beginPath();
-    ctx.arc(PR * 0.42, c * PR * 0.3, PR * 0.13, 0, Math.PI * 2);
-    ctx.fillStyle = '#fff';
-    ctx.fill();
-    ctx.strokeStyle = '#3d2a1a';
-    ctx.lineWidth = 2;
-    ctx.stroke();
-  }
-
-  ctx.restore();
-}
-
-
+    // === ИМЯ ===
     ctx.font = 'bold 14px sans-serif';
     ctx.textAlign = 'center';
     ctx.strokeStyle = '#000';
@@ -620,6 +613,7 @@ if (p.level === 5 && p.swingActive) {
       ctx.fillText(p.name, x, y - p.r - 24);
     }
 
+    // === HP ===
     if (p.hp !== undefined && p.maxHp !== undefined) {
       const barWidth = p.r * 2, barHeight = 5;
       const barX = x - barWidth / 2, barY = y - p.r - 18;
@@ -633,6 +627,7 @@ if (p.level === 5 && p.swingActive) {
       ctx.strokeRect(barX, barY, barWidth, barHeight);
     }
 
+    // === ЧАТ ===
     if (p.chatText) {
       const tx = x, ty = y - p.r - 45;
       ctx.font = 'bold 16px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
@@ -649,13 +644,14 @@ if (p.level === 5 && p.swingActive) {
 
   ctx.restore();
 
+  // === HUD ===
   if (myId && players[myId] && !players[myId].dead && !spectating) {
     const p = players[myId];
     const animalNames = ['Мышка', 'Кролик', 'Лиса', 'Волк', 'Медведь', 'Дракон', 'Король Драконов'];
     const animalName = p.isSanta ? '🎅 Дед Мороз' : animalNames[Math.min(p.level - 1, animalNames.length - 1)];
     const boostCd = p.lastBoost ? Math.max(0, 500 - (Date.now() - p.lastBoost)) : 0;
     const boostStatus = boostCd > 0 ? `⏳ ${(boostCd / 1000).toFixed(1)}s` : '⚡ READY';
-    const adminTag = isAdmin ? ' 👑ADMIN' : '';
+    const adminTag = isAdmin ? ' 👑ADMIN (↑↓ уровень)' : '';
     let quest = '';
     if (p.level === 6) quest = ` | 🐉 Драконы: ${p.dragonsKilled || 0}/3 (K)`;
     else if (p.level === 7) quest = ' | Q=Огонь E=Хвост';
@@ -675,11 +671,13 @@ if (p.level === 5 && p.swingActive) {
     ctx.fillText(`👁 SPECTATOR: ${spectateTarget.name}`, canvas.width / 2, 40);
   }
 
+  // === LEADERBOARD ===
   leaderboard.innerHTML = '<b>Топ:</b><br>' +
     sorted.slice(0, 5).map((p, i) =>
       `${i + 1}. ${p.isSanta ? '🎅' : ''} ${p.name} — ${p.score}`
     ).join('<br>');
 
+  // === МИНИКАРТА ===
   mmCtx.clearRect(0, 0, 160, 160);
   for (const b of biomes) {
     mmCtx.fillStyle = b.color;
