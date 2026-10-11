@@ -58,18 +58,17 @@ ws.onmessage = (event) => {
       const me = players[myId];
       bottomBar.style.display = 'block';
 
-if (me.dead) {
-  barLabel.textContent = '💀 Ты погиб! Нажми «ИГРАТЬ»';
-  xpFill.style.width = '0%';
-  waterFill.style.width = '0%';
-  const menu = document.getElementById('menu');
-  if (menu.style.display === 'none' || !menu.style.display) {
-    menu.style.display = 'flex';
-    gameStarted = false;
-    document.getElementById('startBtn').textContent = '▶ ИГРАТЬ';
-    hideMobileControls();  // ← добавили
-  }
-}
+      if (me.dead) {
+        barLabel.textContent = '💀 Ты погиб! Нажми «ИГРАТЬ»';
+        xpFill.style.width = '0%';
+        waterFill.style.width = '0%';
+        const menu = document.getElementById('menu');
+        if (menu.style.display === 'none' || !menu.style.display) {
+          menu.style.display = 'flex';
+          gameStarted = false;
+          document.getElementById('startBtn').textContent = '▶ ИГРАТЬ';
+          hideMobileControls();
+        }
       } else {
         const xpToNext = [10, 25, 50, 100, 200, 400, Infinity][Math.min(me.level - 1, 6)];
         const prevXP = me.level > 1 ? [0, 10, 25, 50, 100, 200, 400][me.level - 1] : 0;
@@ -190,7 +189,7 @@ document.getElementById('startBtn').addEventListener('click', () => {
   document.getElementById('menu').style.display = 'none';
   gameStarted = true;
   bottomBar.style.display = 'block';
-  showMobileControls();  // ← добавили
+  showMobileControls();
 });
 
 document.addEventListener('keydown', (e) => {
@@ -472,8 +471,8 @@ function draw() {
     if (p.hidden && p.id == myId) {
       ctx.globalAlpha = 0.5;
       const hiddenSize = p.level === 7 ? p.r * 4.0 : p.r * 2.6;
-if (p.isSanta) drawSkin(ctx, x, y, hiddenSize, 'santa', p.renderAngle !== undefined ? p.renderAngle : p.angle);
-else drawSkin(ctx, x, y, hiddenSize, p.level, p.renderAngle !== undefined ? p.renderAngle : p.angle);
+      if (p.isSanta) drawSkin(ctx, x, y, hiddenSize, 'santa', p.renderAngle !== undefined ? p.renderAngle : p.angle);
+      else drawSkin(ctx, x, y, hiddenSize, p.level, p.renderAngle !== undefined ? p.renderAngle : p.angle);
       ctx.globalAlpha = 1;
       ctx.font = 'bold 14px sans-serif'; ctx.textAlign = 'center';
       ctx.fillStyle = '#ffd700';
@@ -482,8 +481,8 @@ else drawSkin(ctx, x, y, hiddenSize, p.level, p.renderAngle !== undefined ? p.re
     }
 
     const skinSize = p.level === 7 ? p.r * 4.0 : p.r * 2.6;
-if (p.isSanta) drawSkin(ctx, x, y, skinSize, 'santa', p.renderAngle !== undefined ? p.renderAngle : p.angle);
-else drawSkin(ctx, x, y, skinSize, p.level, p.renderAngle !== undefined ? p.renderAngle : p.angle);
+    if (p.isSanta) drawSkin(ctx, x, y, skinSize, 'santa', p.renderAngle !== undefined ? p.renderAngle : p.angle);
+    else drawSkin(ctx, x, y, skinSize, p.level, p.renderAngle !== undefined ? p.renderAngle : p.angle);
 
     if (p.boostActive) {
       ctx.beginPath(); ctx.arc(x, y, p.r * 1.4, 0, Math.PI * 2);
@@ -617,7 +616,6 @@ else drawSkin(ctx, x, y, skinSize, p.level, p.renderAngle !== undefined ? p.rend
 // === МОБИЛЬНОЕ УПРАВЛЕНИЕ ===
 const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
 
-// Джойстик показываем ТОЛЬКО после старта игры
 function showMobileControls() {
   if (isMobile) {
     document.getElementById('joystick').style.display = 'block';
