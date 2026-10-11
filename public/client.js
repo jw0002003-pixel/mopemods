@@ -6,6 +6,7 @@ const minimap = document.getElementById('minimap');
 const mmCtx = minimap.getContext('2d');
 const xpFill = document.getElementById('xp-fill');
 const waterFill = document.getElementById('water-fill');
+const airFill = document.getElementById('air-fill');
 const barLabel = document.getElementById('bar-label');
 const bottomBar = document.getElementById('bottom-bar');
 
