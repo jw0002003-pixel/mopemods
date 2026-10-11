@@ -20,8 +20,23 @@ const ADMIN_PASSWORD = '1';
 
 const VOLCANO = { x: 3000, y: 2700, r: 900 };
 
+// 🦆 ОСТРОВ УТОК — в лесу слева от вулкана
+const DUCK_ISLAND = { x: 2000, y: 2650, r: 250 };
+const DUCK_POND = { x: 2000, y: 2650, r: 130 };
+const DUCK_COUNT = 15;
+const BREAD_COUNT = 5;
+const EGG_COUNT = 3;
+
 function isInVolcano(x, y) {
   return Math.hypot(x - VOLCANO.x, y - VOLCANO.y) < VOLCANO.r;
+}
+
+function isInDuckIsland(x, y) {
+  return Math.hypot(x - DUCK_ISLAND.x, y - DUCK_ISLAND.y) < DUCK_ISLAND.r;
+}
+
+function isInDuckPond(x, y) {
+  return Math.hypot(x - DUCK_POND.x, y - DUCK_POND.y) < DUCK_POND.r;
 }
 
 const BIOMES = [
@@ -41,6 +56,7 @@ const RIVER_FLOW = { x: 1, y: 0 };
 
 function getBiomeAt(x, y) {
   if (isInVolcano(x, y)) return { name: 'volcano', color: '#4a1818' };
+  if (isInDuckIsland(x, y)) return { name: 'duck', color: '#2d5a27' };
   for (const b of BIOMES) {
     if (x >= b.x && x < b.x + b.w && y >= b.y && y < b.y + b.h) return b;
   }
@@ -115,7 +131,9 @@ const FOOD_TYPES = [
   { name: 'meat',     color: '#a0522d', r: 38, xp: 8,  emoji: '🍖', biome: 'snow',    minLevel: 3, bites: 3 },
   { name: 'cactus',   color: '#2d6a4f', r: 36, xp: 7,  emoji: '🌵', biome: 'desert',  minLevel: 3, bites: 3 },
   { name: 'ice',      color: '#a0e0ff', r: 42, xp: 10, emoji: '🧊', biome: 'snow',    minLevel: 4, bites: 4 },
-  { name: 'lava',     color: '#ff4500', r: 45, xp: 12, emoji: '🔥', biome: 'volcano', minLevel: 5, bites: 4 }
+  { name: 'lava',     color: '#ff4500', r: 45, xp: 12, emoji: '🔥', biome: 'volcano', minLevel: 5, bites: 4 },
+  { name: 'bread',    color: '#f4a460', r: 28, xp: 8,  emoji: '🍞', biome: 'duck',    minLevel: 1, bites: 1 },
+  { name: 'egg',      color: '#fffff0', r: 26, xp: 15, emoji: '🥚', biome: 'duck',    minLevel: 1, bites: 1 }
 ];
 
 const ANIMALS = [
@@ -139,6 +157,7 @@ let fireballs = [];
 let presents = [];
 let crystals = [];
 let meat = [];
+let ducks = [];
 let arena = { x: 3000, y: 2700, r: 500, active: false };
 let nextId = 1;
 
@@ -157,6 +176,11 @@ function spawnFood() {
     const d = Math.random() * VOLCANO.r;
     x = VOLCANO.x + Math.cos(a) * d;
     y = VOLCANO.y + Math.sin(a) * d;
+  } else if (type.biome === 'duck') {
+    const a = Math.random() * Math.PI * 2;
+    const d = Math.random() * (DUCK_ISLAND.r - 20);
+    x = DUCK_ISLAND.x + Math.cos(a) * d;
+    y = DUCK_ISLAND.y + Math.sin(a) * d;
   } else {
     const biome = BIOMES.find(b => b.name === type.biome) || BIOMES[0];
     x = biome.x + Math.random() * biome.w;
@@ -171,6 +195,23 @@ function spawnFood() {
   };
 }
 for (let i = 0; i < FOOD_COUNT; i++) food.push(spawnFood());
+
+// 🦆 Спавн уток
+function spawnDuck() {
+  const a = Math.random() * Math.PI * 2;
+  const d = Math.random() * (DUCK_POND.r - 30);
+  return {
+    id: Math.random().toString(36).slice(2),
+    x: DUCK_POND.x + Math.cos(a) * d,
+    y: DUCK_POND.y + Math.sin(a) * d,
+    angle: Math.random() * Math.PI * 2,
+    speed: 0.5 + Math.random() * 0.5,
+    r: 18,
+    hp: 1,
+    quackCooldown: Date.now() + Math.random() * 5000
+  };
+}
+for (let i = 0; i < DUCK_COUNT; i++) ducks.push(spawnDuck());
 
 function spawnCrystal() {
   let x, y;
@@ -210,6 +251,7 @@ for (let i = 0; i < HOLE_COUNT; i++) holes.push(spawnHole());
 
 wss.on('connection', (ws) => {
   const id = nextId++;
+  ws._playerId = id;
   players[id] = {
     id, name: 'Игрок ' + id,
     x: Math.random() * WORLD.width,
@@ -239,7 +281,8 @@ wss.on('connection', (ws) => {
     lastAbility: 0,
     holeState: 'outside',
     holeTargetX: 0,
-    holeTargetY: 0
+    holeTargetY: 0,
+    inDuckIsland: false
   };
   players[id].biome = getBiomeAt(players[id].x, players[id].y).name;
 
@@ -271,7 +314,7 @@ wss.on('connection', (ws) => {
         if (p.level >= 6) return;
         if (p.isSanta) return;
         const biome = getBiomeAt(p.x, p.y);
-        if (biome.name !== 'water' && biome.name !== 'river') return;
+        if (biome.name !== 'water' && biome.name !== 'river' && biome.name !== 'duck') return;
         if (p.air > 0) p.underwater = true;
       }
       if (data.type === 'diveRelease' && players[id]) {
@@ -329,7 +372,7 @@ wss.on('connection', (ws) => {
             p.lastWaterDrink = now;
           }
         } else {
-          if (biome.name === 'water' || biome.name === 'river') {
+          if (biome.name === 'water' || biome.name === 'river' || biome.name === 'duck') {
             p.water = Math.min(p.maxWater, p.water + 30);
             p.lastWaterDrink = now;
           }
@@ -459,6 +502,7 @@ wss.on('connection', (ws) => {
         p.eatenLevels = [];
         p.dragonsKilled = 0;
         p.underwater = false;
+        p.inDuckIsland = false;
       }
       if (data.type === 'respawn' && players[id]) {
         const p = players[id];
@@ -476,6 +520,7 @@ wss.on('connection', (ws) => {
         p.vx = 0; p.vy = 0;
         p.dashVx = 0; p.dashVy = 0;
         p.underwater = false;
+        p.inDuckIsland = false;
         const biome = BIOMES[Math.floor(Math.random() * BIOMES.length)];
         p.x = biome.x + Math.random() * biome.w;
         p.y = biome.y + Math.random() * biome.h;
@@ -519,7 +564,7 @@ wss.on('connection', (ws) => {
             ws.send(JSON.stringify({ type: 'chat', system: true, text: '❌ Нет прав' }));
             return;
           }
-          if (cmd === '/help') ws.send(JSON.stringify({ type: 'chat', system: true, text: '👑 /kill /tp X Y /size N /level N /score N /clear /santa /santaspeed N | Стрелки ↑↓' }));
+          if (cmd === '/help') ws.send(JSON.stringify({ type: 'chat', system: true, text: '👑 /a 1 | /kill /tp X Y /size N /level N /score N /clear /santa /santaspeed N | Стрелки ↑↓' }));
           else if (cmd === '/kill') { delete players[id]; }
           else if (cmd === '/tp' && parts.length === 3) { p.x = parseFloat(parts[1]) || 0; p.y = parseFloat(parts[2]) || 0; }
           else if (cmd === '/size' && parts.length === 2) p.r = Math.max(5, Math.min(200, parseFloat(parts[1]) || 15));
@@ -550,15 +595,50 @@ let tickCount = 0;
 setInterval(() => {
   tickCount++;
 
+  // 🦆 ДВИЖЕНИЕ УТОК
+  for (const d of ducks) {
+    d.angle += (Math.random() - 0.5) * 0.3;
+    d.x += Math.cos(d.angle) * d.speed;
+    d.y += Math.sin(d.angle) * d.speed;
+
+    const distFromPond = Math.hypot(d.x - DUCK_POND.x, d.y - DUCK_POND.y);
+    if (distFromPond > DUCK_POND.r - 20) {
+      const angToCenter = Math.atan2(DUCK_POND.y - d.y, DUCK_POND.x - d.x);
+      d.angle = angToCenter + (Math.random() - 0.5) * 0.5;
+      d.x += Math.cos(d.angle) * d.speed;
+      d.y += Math.sin(d.angle) * d.speed;
+    }
+
+    const nowQ = Date.now();
+    if (nowQ > d.quackCooldown) {
+      d.quackCooldown = nowQ + 5000 + Math.random() * 10000;
+      const msg = JSON.stringify({ type: 'quack', x: d.x, y: d.y });
+      wss.clients.forEach((c) => {
+        if (c.readyState === WebSocket.OPEN) c.send(msg);
+      });
+    }
+  }
+
   for (const id in players) {
     if (!players[id]) continue;
     const p = players[id];
     if (p.dead) continue;
 
+    // 🦆 Вход в утиный биом
+    const inDuckNow = isInDuckIsland(p.x, p.y);
+    if (inDuckNow && !p.inDuckIsland) {
+      p.inDuckIsland = true;
+      const msg = JSON.stringify({ type: 'duck_enter' });
+      wss.clients.forEach((c) => {
+        if (c._playerId === id && c.readyState === WebSocket.OPEN) c.send(msg);
+      });
+    } else if (!inDuckNow && p.inDuckIsland) {
+      p.inDuckIsland = false;
+    }
+
     if (p.hidden) p.hp = Math.min(p.maxHp, p.hp + 2);
     else if (p.hp < p.maxHp) p.hp = Math.min(p.maxHp, p.hp + 0.3);
 
-    // 🌊 Логика кислорода
     const currentBiomeDive = getBiomeAt(p.x, p.y);
     const inWater = currentBiomeDive.name === 'water' || currentBiomeDive.name === 'river';
 
@@ -581,16 +661,16 @@ setInterval(() => {
       p.water = p.maxWater;
     } else {
       const biome = getBiomeAt(p.x, p.y);
-      if (biome.name === 'water' || biome.name === 'river') p.water = Math.min(p.maxWater, p.water + 0.5);
+      if (biome.name === 'water' || biome.name === 'river' || biome.name === 'duck') p.water = Math.min(p.maxWater, p.water + 0.5);
       else p.water -= 0.1;
       if (p.water <= 0) { p.hp -= 1; p.water = 0; }
       p.water = Math.max(0, Math.min(p.maxWater, p.water));
     }
 
     if (isInVolcano(p.x, p.y) && !p.hidden && p.level < 6 && !p.isSanta) {
-      const now = Date.now();
-      if (!p.lastVolcanoDamage || now - p.lastVolcanoDamage >= 1000) {
-        p.lastVolcanoDamage = now;
+      const nowV = Date.now();
+      if (!p.lastVolcanoDamage || nowV - p.lastVolcanoDamage >= 1000) {
+        p.lastVolcanoDamage = nowV;
         p.hp -= 10;
         p.burning = 3;
       }
@@ -634,7 +714,6 @@ setInterval(() => {
     const p = players[id];
     if (p.dead) continue;
 
-    // 🕳 ЗАХОД В НОРУ
     if (p.holeState === 'entering') {
       const dx = p.holeTargetX - p.x;
       const dy = p.holeTargetY - p.y;
@@ -666,7 +745,6 @@ setInterval(() => {
       continue;
     }
 
-    // 🕳 В НОРЕ
     if (p.holeState === 'inside') {
       p.hidden = true;
       p.vx = 0; p.vy = 0;
@@ -707,7 +785,6 @@ setInterval(() => {
       continue;
     }
 
-    // 🕳 ВЫХОД ИЗ НОРЫ
     if (p.holeState === 'exiting') {
       const dirX = p.moveDirX || 0;
       const dirY = p.moveDirY || 0;
@@ -751,7 +828,6 @@ setInterval(() => {
       continue;
     }
 
-    // === ОБЫЧНОЕ ДВИЖЕНИЕ (вне норы) ===
     if (p.hidden) continue;
 
     if (p.stunned && Date.now() < p.stunned) {
@@ -836,7 +912,6 @@ setInterval(() => {
     p.x = Math.max(wallOffset, Math.min(WORLD.width - wallOffset, p.x));
     p.y = Math.max(wallOffset, Math.min(WORLD.height - wallOffset, p.y));
 
-    // 🕳 АВТОЗАХОД В НОРУ (плавный)
     if (p.holeState === 'outside' && p.level < 6 && p.r <= 60 &&
         (!p.holeCooldown || Date.now() >= p.holeCooldown)) {
       for (const h of holes) {
@@ -867,6 +942,41 @@ setInterval(() => {
       for (const c of crystals) {
         if (c.hp <= 0) continue;
         resolveCrystalCollision(p, c);
+      }
+    }
+
+    // 🦆 СТОЛКНОВЕНИЕ С УТКАМИ (с 5 уровня)
+    for (const d of ducks) {
+      if (d.hp <= 0) continue;
+      const dist = Math.hypot(p.x - d.x, p.y - d.y);
+      if (dist < p.r + d.r) {
+        if (p.level >= 5 && !p.underwater) {
+          const nowD = Date.now();
+          if (!p.lastFoodBite || nowD - p.lastFoodBite >= 500) {
+            p.lastFoodBite = nowD;
+            d.hp = 0;
+            p.score += 15;
+            p.hp = Math.min(p.maxHp, p.hp + 5);
+
+            setTimeout(() => {
+              const idx = ducks.findIndex(x => x.id === d.id);
+              if (idx !== -1) {
+                ducks[idx] = spawnDuck();
+              }
+            }, 10000);
+
+            broadcast({ type: 'chat', system: true, text: `🦆 ${p.name} съел утку!` });
+
+            const currentAnimal = getAnimalByLevel(p.level);
+            if (p.score >= currentAnimal.xpToNext && p.level < 6) {
+              p.level += 1;
+              const nextAnimal = getAnimalByLevel(p.level);
+              p.r = nextAnimal.r; p.color = nextAnimal.color;
+              p.hp = nextAnimal.hp; p.maxHp = nextAnimal.hp; p.damage = nextAnimal.damage;
+              broadcast({ type: 'chat', system: true, text: `🎉 ${p.name} стал ${nextAnimal.name}!` });
+            }
+          }
+        }
       }
     }
 
@@ -944,7 +1054,6 @@ setInterval(() => {
     if (p.hidden || p.isSanta || p.dead) continue;
     if (p.holeState !== 'outside') continue;
 
-    // 🍓 ЕДА (нельзя есть под водой)
     for (let i = food.length - 1; i >= 0; i--) {
       if (p.underwater) break;
       const f = food[i];
@@ -954,9 +1063,9 @@ setInterval(() => {
 
       if (distToFood < hitDist) {
         if (p.level < f.minLevel) continue;
-        const now = Date.now();
-        if (!p.lastFoodBite || now - p.lastFoodBite >= 350) {
-          p.lastFoodBite = now;
+        const nowF = Date.now();
+        if (!p.lastFoodBite || nowF - p.lastFoodBite >= 350) {
+          p.lastFoodBite = nowF;
           const isDragon = p.level >= 6;
           if (isDragon) f.hp = 0; else f.hp -= 1;
           const nx = (f.x - p.x) / (distToFood || 1);
@@ -983,7 +1092,6 @@ setInterval(() => {
       }
     }
 
-    // 🍖 МЯСО (нельзя есть под водой)
     for (let i = meat.length - 1; i >= 0; i--) {
       if (p.underwater) break;
       const m = meat[i];
@@ -992,9 +1100,9 @@ setInterval(() => {
       const hitDist = (p.level >= 6) ? p.r + m.r * 0.9 : p.r * 1.0 + m.r * 1.0;
 
       if (distToMeat < hitDist) {
-        const now = Date.now();
-        if (!p.lastFoodBite || now - p.lastFoodBite >= 300) {
-          p.lastFoodBite = now;
+        const nowM = Date.now();
+        if (!p.lastFoodBite || nowM - p.lastFoodBite >= 300) {
+          p.lastFoodBite = nowM;
           const isDragon = p.level >= 6;
           if (isDragon) m.hp = 0; else m.hp -= 1;
           const nx = (m.x - p.x) / (distToMeat || 1);
@@ -1018,7 +1126,6 @@ setInterval(() => {
       }
     }
 
-    // 🎁 ПОДАРКИ (нельзя есть под водой)
     for (let i = presents.length - 1; i >= 0; i--) {
       if (p.underwater) break;
       const pr = presents[i];
@@ -1031,7 +1138,7 @@ setInterval(() => {
     }
   }
 
-  // 💎 КРИСТАЛЛЫ (можно есть под водой)
+  // 💎 КРИСТАЛЛЫ
   for (const id in players) {
     if (!players[id]) continue;
     const p = players[id];
@@ -1040,9 +1147,9 @@ setInterval(() => {
     for (const c of crystals) {
       if (c.hp <= 0) continue;
       if (Math.hypot(p.x - c.x, p.y - c.y) < p.r + c.r * 0.95) {
-        const now = Date.now();
-        if (!p.lastCrystalBite || now - p.lastCrystalBite >= 500) {
-          p.lastCrystalBite = now;
+        const nowC = Date.now();
+        if (!p.lastCrystalBite || nowC - p.lastCrystalBite >= 500) {
+          p.lastCrystalBite = nowC;
           c.hp -= 1;
           if (c.isMega) {
             p.hp = Math.min(p.maxHp, p.hp + 50);
@@ -1056,10 +1163,10 @@ setInterval(() => {
 
           if (c.isMega) {
             p.auraColor = 'orange';
-            p.auraUntil = now + 2000;
+            p.auraUntil = nowC + 2000;
           } else {
             p.auraColor = 'blue';
-            p.auraUntil = now + 1500;
+            p.auraUntil = nowC + 1500;
           }
 
           if (c.hp <= 0) {
@@ -1080,9 +1187,9 @@ setInterval(() => {
     }
   }
 
-  const now = Date.now();
+  const nowR = Date.now();
   for (const c of crystals) {
-    if (c.hp <= 0 && c.respawnAt && now >= c.respawnAt) {
+    if (c.hp <= 0 && c.respawnAt && nowR >= c.respawnAt) {
       if (c.isMega) {
         const a = Math.random() * Math.PI * 2;
         const d = Math.random() * (VOLCANO.r - 100);
@@ -1114,7 +1221,7 @@ setInterval(() => {
       const bigger = p1.r > p2.r ? p1 : p2;
       const smaller = p1.r > p2.r ? p2 : p1;
       if (bigger.r / smaller.r >= 1.2 && dist < bigger.r) {
-        if (smaller.underwater) continue;   // 🫧 Под водой неуязвим
+        if (smaller.underwater) continue;
         const tnow = Date.now();
         if (!smaller.lastHit || tnow - smaller.lastHit >= 500) {
           smaller.lastHit = tnow;
@@ -1163,14 +1270,15 @@ setInterval(() => {
     }
   }
 
-  const fastState = JSON.stringify({ type: 'state_fast', players, fireballs });
+  const fastState = JSON.stringify({ type: 'state_fast', players, fireballs, ducks });
   wss.clients.forEach((c) => { if (c.readyState === WebSocket.OPEN) c.send(fastState); });
 
   if (tickCount % 6 === 0) {
     const slowState = JSON.stringify({
       type: 'state_slow',
       food, holes, biomes: BIOMES, presents, crystals, meat,
-      volcano: VOLCANO, arena
+      volcano: VOLCANO, arena,
+      duckIsland: DUCK_ISLAND, duckPond: DUCK_POND
     });
     wss.clients.forEach((c) => { if (c.readyState === WebSocket.OPEN) c.send(slowState); });
   }
@@ -1179,7 +1287,7 @@ setInterval(() => {
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`Сервер запущен: http://localhost:${PORT}`);
-  console.log(`👑 Админ-пароль: ${ADMIN_PASSWORD}`);
+  console.log(`👑 Админ-пароль: ${ADMIN_PASSWORD} | /a 1`);
   console.log(`🗺 Карта: ${WORLD.width}x${WORLD.height}`);
-  console.log(`🌊 Ныряние на W (уровни 1-5) + неуязвимость`);
+  console.log(`🦆 Остров уток: (${DUCK_ISLAND.x}, ${DUCK_ISLAND.y}) r=${DUCK_ISLAND.r}`);
 });
