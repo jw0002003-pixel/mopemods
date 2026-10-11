@@ -473,7 +473,7 @@ function draw() {
       ctx.globalAlpha = 0.5;
       const hiddenSize = p.level === 7 ? p.r * 4.0 : p.r * 2.6;
 if (p.isSanta) drawSkin(ctx, x, y, hiddenSize, 'santa', p.renderAngle !== undefined ? p.renderAngle : p.angle);
-else drawSkin(ctx, x, y, hiddenSize, p.level, p.renderAngle !== undefined ? p.renderAngle : p.angle);Ы
+else drawSkin(ctx, x, y, hiddenSize, p.level, p.renderAngle !== undefined ? p.renderAngle : p.angle);
       ctx.globalAlpha = 1;
       ctx.font = 'bold 14px sans-serif'; ctx.textAlign = 'center';
       ctx.fillStyle = '#ffd700';
