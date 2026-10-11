@@ -618,6 +618,8 @@ setInterval(() => {
       } else {
         p.x += (dx / dist) * step;
         p.y += (dy / dist) * step;
+        // 🎯 Смотрим куда едем (в центр норы)
+        p.angle = Math.atan2(dy, dx);
       }
       continue;
     }
