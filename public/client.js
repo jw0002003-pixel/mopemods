@@ -33,8 +33,8 @@ let crystals = [];
 let meat = [];
 let trees = [];
 let ducks = [];
-let duckIsland = { x: 2000, y: 2650, r: 250 };
-let duckPond = { x: 2000, y: 2650, r: 130 };
+let duckIsland = { x: 1500, y: 3100, r: 250 };
+let duckPond = { x: 1500, y: 3100, r: 130 };
 let volcano = { x: 3000, y: 2700, r: 900 };
 let arena = { x: 3000, y: 2700, r: 500, active: false };
 let mouse = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
@@ -43,8 +43,6 @@ let gameStarted = false;
 let isAdmin = false;
 let spectating = false;
 let spectateTarget = null;
-
-// 🦆 Для попапа КРЯ
 let quackPopups = [];
 
 const FOV_RADIUS = [500, 600, 700, 800, 900, 1000, 1200];
@@ -52,7 +50,7 @@ const FOV_RADIUS = [500, 600, 700, 800, 900, 1000, 1200];
 const chatInput = document.getElementById('chat-input');
 let chatOpen = false;
 
-// === 🎵 ЗВУК КРЯ (Web Audio) ===
+// === 🎵 Web Audio для КРЯ ===
 let audioCtx = null;
 function initAudio() {
   if (!audioCtx) {
@@ -66,21 +64,16 @@ function playQuack(pitch = 1) {
   if (!audioCtx) return;
   try {
     const now = audioCtx.currentTime;
-
-    // Два тона — «кря-кря»
     for (let i = 0; i < 2; i++) {
       const start = now + i * 0.12;
       const osc = audioCtx.createOscillator();
       const gain = audioCtx.createGain();
-
-      osc.type = 'sawtooth';
-      osc.frequency.setValueAtTime(280 * pitch, start);
-      osc.frequency.exponentialRampToValueAtTime(180 * pitch, start + 0.08);
-
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(220 * pitch, start);
+      osc.frequency.exponentialRampToValueAtTime(160 * pitch, start + 0.08);
       gain.gain.setValueAtTime(0, start);
-      gain.gain.linearRampToValueAtTime(0.15, start + 0.01);
+      gain.gain.linearRampToValueAtTime(0.04, start + 0.01);
       gain.gain.exponentialRampToValueAtTime(0.001, start + 0.1);
-
       osc.connect(gain);
       gain.connect(audioCtx.destination);
       osc.start(start);
@@ -88,6 +81,17 @@ function playQuack(pitch = 1) {
     }
   } catch (e) {}
 }
+
+// === 🎨 СПРАЙТЫ ЕДЫ ===
+const foodImages = {};
+const foodNames = ['berry', 'mushroom', 'apple', 'banana', 'fish',
+                   'carrot', 'meat', 'cactus', 'ice', 'lava',
+                   'bread', 'egg'];
+foodNames.forEach(name => {
+  const img = new Image();
+  img.src = `skins/food/${name}.png`;
+  foodImages[name] = img;
+});
 
 const ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}`);
 function safeSend(data) {
@@ -124,7 +128,7 @@ ws.onmessage = (event) => {
         if (menu.style.display === 'none' || !menu.style.display) {
           menu.style.display = 'flex';
           gameStarted = false;
-          document.getElementById('startBtn').textContent = '▶ ИГРАТЬ';
+          document.getElementById('startBtn').textContent = '▶ PLAY';
           hideMobileControls();
         }
       } else {
@@ -170,12 +174,10 @@ ws.onmessage = (event) => {
   else if (data.type === 'chat') {
     if (data.system) showNotification(data.text);
   }
-  // 🦆 Вход в утиный биом
   else if (data.type === 'duck_enter') {
     quackPopups.push({ text: 'КРЯ!', life: 1.5, maxLife: 1.5 });
     playQuack(0.9 + Math.random() * 0.3);
   }
-  // 🦆 Утка крякает
   else if (data.type === 'quack') {
     playQuack(0.8 + Math.random() * 0.6);
   }
@@ -274,15 +276,6 @@ setInterval(() => {
   ws.send(JSON.stringify({ type: 'move', dirX: nx, dirY: ny, power: power }));
 }, 1000 / 30);
 
-let selectedBiome = 'forest';
-document.querySelectorAll('.biome-buttons button').forEach(btn => {
-  btn.addEventListener('click', () => {
-    selectedBiome = btn.dataset.biome;
-    document.querySelectorAll('.biome-buttons button').forEach(b => b.style.borderColor = '#fff');
-    btn.style.borderColor = '#ff0';
-  });
-});
-
 document.getElementById('startBtn').addEventListener('click', () => {
   if (!myId) return;
   initAudio();
@@ -290,7 +283,7 @@ document.getElementById('startBtn').addEventListener('click', () => {
   const name = nameInput.value.trim() || ('Игрок ' + myId);
   ws.send(JSON.stringify({ type: 'setName', name }));
   setTimeout(() => {
-    ws.send(JSON.stringify({ type: 'spawn', biome: selectedBiome }));
+    ws.send(JSON.stringify({ type: 'spawn', biome: 'forest' }));
   }, 100);
   document.getElementById('menu').style.display = 'none';
   gameStarted = true;
@@ -315,8 +308,13 @@ document.addEventListener('keydown', (e) => {
 chatInput.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') {
     e.preventDefault();
-    const text = chatInput.value.trim();
-    if (text.length > 0 && myId) ws.send(JSON.stringify({ type: 'chat', text }));
+    const rawText = chatInput.value.trim();
+
+    // 📝 Ограничение — максимум 5 слов
+    const words = rawText.split(/\s+/).filter(w => w.length > 0);
+    const limitedText = words.slice(0, 5).join(' ');
+
+    if (limitedText.length > 0 && myId) ws.send(JSON.stringify({ type: 'chat', text: limitedText }));
     chatInput.value = '';
     chatOpen = false;
     chatInput.style.display = 'none';
@@ -329,6 +327,92 @@ chatInput.addEventListener('keydown', (e) => {
     chatInput.blur();
   }
 });
+
+// === 🎨 ЛОГИКА НАСТРОЕК ===
+const settingsPanel = document.getElementById('settings-panel');
+const settingsBtn = document.getElementById('settingsBtn');
+const applyBtn = document.getElementById('applySettings');
+const resetBtn = document.getElementById('resetSettings');
+
+settingsBtn.addEventListener('click', () => {
+  settingsPanel.classList.toggle('active');
+});
+
+settingsPanel.addEventListener('click', (e) => {
+  if (e.target === settingsPanel) {
+    settingsPanel.classList.remove('active');
+  }
+});
+
+let currentTheme = localStorage.getItem('theme') || 'dark';
+let currentBg = localStorage.getItem('bg') || '#1a2a3a';
+
+function applyTheme(theme) {
+  if (theme === 'light') {
+    document.documentElement.style.setProperty('--bg-color', '#e0e8f0');
+    document.documentElement.style.setProperty('--menu-bg', 'rgba(255, 255, 255, 0.95)');
+    document.documentElement.style.setProperty('--text-color', '#1a1a1a');
+    document.documentElement.style.setProperty('--input-bg', 'rgba(255, 255, 255, 0.9)');
+    document.documentElement.style.setProperty('--input-border', '#2196F3');
+  } else {
+    document.documentElement.style.setProperty('--bg-color', currentBg);
+    document.documentElement.style.setProperty('--menu-bg', 'rgba(20, 35, 55, 0.95)');
+    document.documentElement.style.setProperty('--text-color', '#ffffff');
+    document.documentElement.style.setProperty('--input-bg', 'rgba(0, 0, 0, 0.5)');
+    document.documentElement.style.setProperty('--input-border', '#ffffff');
+  }
+}
+
+function applyBg(color) {
+  document.documentElement.style.setProperty('--bg-color', color);
+  document.getElementById('menu').style.background = color;
+}
+
+document.querySelectorAll('.theme-buttons button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.theme-buttons button').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    currentTheme = btn.dataset.theme;
+    applyTheme(currentTheme);
+  });
+});
+
+document.querySelectorAll('#bg-palette .color-swatch').forEach(sw => {
+  sw.addEventListener('click', () => {
+    document.querySelectorAll('#bg-palette .color-swatch').forEach(s => s.classList.remove('active'));
+    sw.classList.add('active');
+    currentBg = sw.dataset.color;
+    applyBg(currentBg);
+  });
+});
+
+applyBtn.addEventListener('click', () => {
+  localStorage.setItem('theme', currentTheme);
+  localStorage.setItem('bg', currentBg);
+  settingsPanel.classList.remove('active');
+  showNotification('✓ Настройки сохранены');
+});
+
+resetBtn.addEventListener('click', () => {
+  currentTheme = 'dark';
+  currentBg = '#1a2a3a';
+  localStorage.removeItem('theme');
+  localStorage.removeItem('bg');
+
+  document.querySelectorAll('.theme-buttons button').forEach(b => {
+    b.classList.toggle('active', b.dataset.theme === 'dark');
+  });
+  document.querySelectorAll('#bg-palette .color-swatch').forEach(s => {
+    s.classList.toggle('active', s.dataset.color === '#1a2a3a');
+  });
+
+  applyTheme('dark');
+  applyBg('#1a2a3a');
+  showNotification('↺ Настройки сброшены');
+});
+
+applyTheme(currentTheme);
+applyBg(currentBg);
 
 function draw() {
   ctx.fillStyle = '#0a0a1a';
@@ -404,11 +488,10 @@ function draw() {
     ctx.fillRect(b.x - camera.x, b.y - camera.y, b.w, b.h);
   }
 
-  // 🦆 ОСТРОВ УТОК — поверх биомов
+  // 🦆 ОСТРОВ УТОК
   const dix = duckIsland.x - camera.x;
   const diy = duckIsland.y - camera.y;
 
-  // Трава острова (круг)
   ctx.beginPath();
   ctx.arc(dix, diy, duckIsland.r, 0, Math.PI * 2);
   ctx.fillStyle = '#3a7d2e';
@@ -417,7 +500,6 @@ function draw() {
   ctx.lineWidth = 4;
   ctx.stroke();
 
-  // Внутренний тёмный круг
   ctx.beginPath();
   ctx.arc(dix, diy, duckIsland.r - 15, 0, Math.PI * 2);
   ctx.fillStyle = '#2d6a27';
@@ -438,7 +520,6 @@ function draw() {
   ctx.lineWidth = 4;
   ctx.stroke();
 
-  // Блики на воде
   for (let i = 0; i < 3; i++) {
     const angle = (Date.now() / 2000 + i * 2.1) % (Math.PI * 2);
     const bx = dpx + Math.cos(angle) * duckPond.r * 0.4;
@@ -449,7 +530,6 @@ function draw() {
     ctx.fill();
   }
 
-  // 🌾 Камыши по краю острова
   for (let i = 0; i < 16; i++) {
     const angle = (i / 16) * Math.PI * 2;
     const cx = dix + Math.cos(angle) * (duckIsland.r - 8);
@@ -503,6 +583,7 @@ function draw() {
   ctx.strokeStyle = '#fff'; ctx.lineWidth = 4;
   ctx.strokeRect(-camera.x, -camera.y, world.width, world.height);
 
+  // === ДЕРЕВЬЯ ===
   for (const tr of trees) {
     const tx = tr.x - camera.x;
     const ty = tr.y - camera.y;
@@ -522,6 +603,7 @@ function draw() {
     ctx.fill();
   }
 
+  // === НОРЫ ===
   for (const h of holes) {
     const hx = h.x - camera.x, hy = h.y - camera.y;
     const grad = ctx.createRadialGradient(hx, hy, h.r * 0.4, hx, hy, h.r * 1.5);
@@ -544,6 +626,7 @@ function draw() {
     ctx.beginPath(); ctx.arc(hx, hy, h.r * 0.8, 0, Math.PI * 2); ctx.stroke();
   }
 
+  // === КРИСТАЛЛЫ ===
   for (const c of crystals) {
     if (c.hp <= 0) continue;
     const cx = c.x - camera.x, cy = c.y - camera.y;
@@ -584,52 +667,50 @@ function draw() {
     ctx.fillRect(cx - w / 2, barY, w * (c.hp / c.maxHp), h);
   }
 
-  // 🦆 УТКИ
+  // === УТКИ ===
   for (const d of ducks) {
     if (d.hp <= 0) continue;
     const dx2 = d.x - camera.x;
     const dy2 = d.y - camera.y;
-    const time = Date.now() / 1000;
 
     // Тень
     ctx.fillStyle = 'rgba(0,0,0,0.25)';
     ctx.beginPath();
-    ctx.ellipse(dx2, dy2 + 8, 18, 7, 0, 0, Math.PI * 2);
+    ctx.ellipse(dx2, dy2 + 8, d.r, d.r * 0.4, 0, 0, Math.PI * 2);
     ctx.fill();
 
-    // Тело (волны сзади)
+    // Волны
     ctx.beginPath();
-    ctx.ellipse(dx2, dy2 + 12, 22, 6, 0, 0, Math.PI * 2);
+    ctx.ellipse(dx2, dy2 + 12, d.r * 1.2, d.r * 0.35, 0, 0, Math.PI * 2);
     ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
     ctx.fill();
 
-    // Утка (простая форма)
+    // Тело утки
     ctx.save();
     ctx.translate(dx2, dy2);
-    // Поворот по направлению
-    let ang = d.angle;
+    let ang = d.angle || 0;
     if (ang > Math.PI / 2 || ang < -Math.PI / 2) ang += Math.PI;
     ctx.rotate(ang);
 
     // Тело
     ctx.beginPath();
-    ctx.ellipse(0, 0, 18, 14, 0, 0, Math.PI * 2);
-    ctx.fillStyle = '#ffffff';
+    ctx.ellipse(0, 0, d.r, d.r * 0.78, 0, 0, Math.PI * 2);
+    ctx.fillStyle = d.color || '#ffffff';
     ctx.fill();
-    ctx.strokeStyle = '#c0c0c0';
+    ctx.strokeStyle = '#999';
     ctx.lineWidth = 2;
     ctx.stroke();
 
     // Крыло
     ctx.beginPath();
-    ctx.ellipse(-4, 0, 10, 8, 0, 0, Math.PI * 2);
-    ctx.fillStyle = '#e0e0e0';
+    ctx.ellipse(-d.r * 0.22, 0, d.r * 0.55, d.r * 0.45, 0, 0, Math.PI * 2);
+    ctx.fillStyle = d.belly || '#e0e0e0';
     ctx.fill();
 
     // Шея + голова
     ctx.beginPath();
-    ctx.arc(14, -10, 8, 0, Math.PI * 2);
-    ctx.fillStyle = '#2d5a27';
+    ctx.arc(d.r * 0.78, -d.r * 0.55, d.r * 0.45, 0, Math.PI * 2);
+    ctx.fillStyle = d.head || '#2d5a27';
     ctx.fill();
     ctx.strokeStyle = '#1e4d1a';
     ctx.lineWidth = 2;
@@ -637,17 +718,17 @@ function draw() {
 
     // Глаз
     ctx.beginPath();
-    ctx.arc(17, -12, 1.8, 0, Math.PI * 2);
+    ctx.arc(d.r * 0.95, -d.r * 0.67, d.r * 0.1, 0, Math.PI * 2);
     ctx.fillStyle = '#000';
     ctx.fill();
 
     // Клюв
     ctx.beginPath();
-    ctx.moveTo(21, -10);
-    ctx.lineTo(27, -8);
-    ctx.lineTo(21, -6);
+    ctx.moveTo(d.r * 1.17, -d.r * 0.55);
+    ctx.lineTo(d.r * 1.5, -d.r * 0.44);
+    ctx.lineTo(d.r * 1.17, -d.r * 0.33);
     ctx.closePath();
-    ctx.fillStyle = '#ffa500';
+    ctx.fillStyle = d.beak || '#ffa500';
     ctx.fill();
     ctx.strokeStyle = '#cc8400';
     ctx.lineWidth = 1.5;
@@ -656,14 +737,40 @@ function draw() {
     ctx.restore();
   }
 
-  // 🍓 ЕДА
+  // === ЕДА (со спрайтами) ===
   for (const f of food) {
     const fx = f.x - camera.x, fy = f.y - camera.y;
+
+    // Тень
     ctx.fillStyle = 'rgba(0,0,0,0.3)';
-    ctx.beginPath(); ctx.ellipse(fx, fy + f.r * 0.7, f.r * 0.9, f.r * 0.3, 0, 0, Math.PI * 2); ctx.fill();
-    ctx.beginPath(); ctx.arc(fx, fy, f.r, 0, Math.PI * 2);
-    ctx.fillStyle = f.color; ctx.fill();
-    ctx.strokeStyle = 'rgba(0,0,0,0.4)'; ctx.lineWidth = 1.5; ctx.stroke();
+    ctx.beginPath();
+    ctx.ellipse(fx, fy + f.r * 0.7, f.r * 0.9, f.r * 0.3, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Спрайт
+    const img = foodImages[f.sprite];
+    if (img && img.complete && img.naturalWidth > 0) {
+      ctx.drawImage(img, fx - f.r, fy - f.r, f.r * 2, f.r * 2);
+    } else {
+      // Fallback
+      ctx.beginPath();
+      ctx.arc(fx, fy, f.r, 0, Math.PI * 2);
+      ctx.fillStyle = f.color;
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(0,0,0,0.4)';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+
+      // Emoji fallback
+      if (f.emoji) {
+        ctx.font = `${f.r * 1.1}px serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(f.emoji, fx, fy + 1);
+      }
+    }
+
+    // HP бар
     if (f.maxHp && f.maxHp > 1) {
       const w = f.r * 1.6, h = 3;
       ctx.fillStyle = 'rgba(0,0,0,0.6)';
@@ -671,12 +778,9 @@ function draw() {
       ctx.fillStyle = '#00ff00';
       ctx.fillRect(fx - w / 2, fy - f.r - 6, w * (f.hp / f.maxHp), h);
     }
-    ctx.font = `${f.r * 1.1}px serif`;
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText(f.emoji || '🍓', fx, fy + 1);
   }
 
-  // 🍖 МЯСО
+  // === МЯСО ===
   for (const m of meat) {
     const mx = m.x - camera.x;
     const my = m.y - camera.y;
@@ -690,14 +794,14 @@ function draw() {
     ctx.fillText('🍖', mx, my + 1);
   }
 
-  // 🎁 ПОДАРКИ
+  // === ПОДАРКИ ===
   for (const pr of presents) {
     ctx.font = '40px serif';
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillText('🎁', pr.x - camera.x, pr.y - camera.y);
   }
 
-  // 🔥 ОГНЕННЫЕ ШАРЫ
+  // === ОГНЕННЫЕ ШАРЫ ===
   for (const fb of fireballs) {
     const fx = fb.x - camera.x, fy = fb.y - camera.y;
     const glow = ctx.createRadialGradient(fx, fy, 0, fx, fy, fb.r * 2);
@@ -718,7 +822,7 @@ function draw() {
     const y = (p.renderY !== undefined ? p.renderY : p.y) - camera.y;
     if (p.hidden && p.id != myId) continue;
 
-    // 🫧 Пузырьки если нырнул
+    // 🫧 Пузырьки
     if (p.underwater) {
       ctx.save();
       ctx.globalAlpha = 0.85;
@@ -799,18 +903,6 @@ function draw() {
         else drawSkin(ctx, x, y, hiddenSize, p.level, p.renderAngle !== undefined ? p.renderAngle : p.angle);
         ctx.globalAlpha = 1;
       }
-      if (p.id == myId && p.hp !== undefined && p.maxHp !== undefined) {
-        const barWidth = p.r * 2, barHeight = 5;
-        const barX = x - barWidth / 2, barY = y - p.r - 18;
-        ctx.fillStyle = 'rgba(0,0,0,0.7)';
-        ctx.fillRect(barX, barY, barWidth, barHeight);
-        const hpPercent = Math.max(0, p.hp / p.maxHp);
-        const hpColor = hpPercent > 0.5 ? '#00ff00' : hpPercent > 0.25 ? '#ffff00' : '#ff0000';
-        ctx.fillStyle = hpColor;
-        ctx.fillRect(barX, barY, barWidth * hpPercent, barHeight);
-        ctx.strokeStyle = '#fff'; ctx.lineWidth = 1;
-        ctx.strokeRect(barX, barY, barWidth, barHeight);
-      }
       continue;
     }
 
@@ -818,6 +910,7 @@ function draw() {
     if (p.isSanta) drawSkin(ctx, x, y, skinSize, 'santa', p.renderAngle !== undefined ? p.renderAngle : p.angle);
     else drawSkin(ctx, x, y, skinSize, p.level, p.renderAngle !== undefined ? p.renderAngle : p.angle);
 
+    // Лапа медведя
     if (p.level === 5 && p.swingActive) {
       const PR = Math.max(0.1, Math.abs(p.r || 1));
       const angle = p.renderAngle !== undefined ? p.renderAngle : (p.angle || 0);
@@ -834,23 +927,8 @@ function draw() {
 
       ctx.save();
       ctx.globalAlpha = alpha;
-      if (tt < 0.5) {
-        const waveProgress = tt / 0.5;
-        const waveR = PR * (0.6 + waveProgress * 1.2);
-        ctx.beginPath();
-        ctx.arc(pawX, pawY, waveR, 0, Math.PI * 2);
-        ctx.strokeStyle = `rgba(255, 220, 100, ${1 - waveProgress})`;
-        ctx.lineWidth = 5 * (1 - waveProgress);
-        ctx.stroke();
-      }
-      ctx.translate(pawX, pawY);
-      ctx.rotate(pawAngle);
       ctx.beginPath();
-      ctx.arc(3, 3, PR * 0.6, 0, Math.PI * 2);
-      ctx.fillStyle = 'rgba(0,0,0,0.35)';
-      ctx.fill();
-      ctx.beginPath();
-      ctx.arc(0, 0, PR * 0.6, 0, Math.PI * 2);
+      ctx.arc(pawX, pawY, PR * 0.6, 0, Math.PI * 2);
       ctx.fillStyle = '#6f4e37';
       ctx.fill();
       ctx.strokeStyle = '#3d2a1a';
@@ -858,16 +936,14 @@ function draw() {
       ctx.stroke();
       for (let c = -1; c <= 1; c++) {
         ctx.beginPath();
-        ctx.arc(PR * 0.42, c * PR * 0.3, PR * 0.13, 0, Math.PI * 2);
+        ctx.arc(pawX + PR * 0.42 * Math.cos(pawAngle), pawY + PR * 0.42 * Math.sin(pawAngle) + c * PR * 0.3, PR * 0.13, 0, Math.PI * 2);
         ctx.fillStyle = '#fff';
         ctx.fill();
-        ctx.strokeStyle = '#3d2a1a';
-        ctx.lineWidth = 2;
-        ctx.stroke();
       }
       ctx.restore();
     }
 
+    // Имя
     ctx.font = 'bold 14px sans-serif';
     ctx.textAlign = 'center';
     ctx.strokeStyle = '#000';
@@ -889,6 +965,7 @@ function draw() {
       ctx.fillText(p.name, x, y - p.r - 24);
     }
 
+    // HP
     if (p.hp !== undefined && p.maxHp !== undefined) {
       const barWidth = p.r * 2, barHeight = 5;
       const barX = x - barWidth / 2, barY = y - p.r - 18;
@@ -902,23 +979,39 @@ function draw() {
       ctx.strokeRect(barX, barY, barWidth, barHeight);
     }
 
-    if (p.chatText) {
+    // 💬 ЧАТ — без квадрата, плавное исчезновение
+    if (p.chatText && p.chatTime) {
       const tx = x, ty = y - p.r - 45;
-      ctx.font = 'bold 16px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      const metrics = ctx.measureText(p.chatText);
-      const textWidth = metrics.width + 16;
-      ctx.fillStyle = 'rgba(0,0,0,0.75)';
-      ctx.fillRect(tx - textWidth / 2, ty - 12, textWidth, 24);
-      ctx.strokeStyle = '#fff'; ctx.lineWidth = 1;
-      ctx.strokeRect(tx - textWidth / 2, ty - 12, textWidth, 24);
-      ctx.fillStyle = '#fff';
+
+      const elapsed = Date.now() - p.chatTime;
+      const life = 4000;
+      let alpha = 1;
+      if (elapsed > life * 0.6) {
+        alpha = 1 - (elapsed - life * 0.6) / (life * 0.4);
+      }
+      if (alpha <= 0) continue;
+
+      ctx.save();
+      ctx.globalAlpha = Math.max(0, Math.min(1, alpha));
+
+      ctx.font = 'bold 16px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+
+      ctx.strokeStyle = 'rgba(0,0,0,0.9)';
+      ctx.lineWidth = 4;
+      ctx.strokeText(p.chatText, tx, ty);
+
+      ctx.fillStyle = '#ffffff';
       ctx.fillText(p.chatText, tx, ty);
+
+      ctx.restore();
     }
   }
 
   ctx.restore();
 
-  // 🦆 ПОПАП КРЯ (в центре экрана)
+  // 🦆 ПОПАП КРЯ
   quackPopups = quackPopups.filter(q => q.life > 0);
   for (const q of quackPopups) {
     q.life -= dt;
@@ -978,26 +1071,24 @@ function draw() {
     mmCtx.fillStyle = b.color;
     mmCtx.fillRect(b.x / world.width * 160, b.y / world.height * 160, b.w / world.width * 160, b.h / world.height * 160);
   }
-  // Вулкан
   mmCtx.beginPath();
   mmCtx.arc(volcano.x / world.width * 160, volcano.y / world.height * 160, volcano.r / world.width * 160, 0, Math.PI * 2);
   mmCtx.fillStyle = '#ff6600'; mmCtx.fill();
-  // 🦆 Остров уток
+
   mmCtx.beginPath();
   mmCtx.arc(duckIsland.x / world.width * 160, duckIsland.y / world.height * 160, duckIsland.r / world.width * 160, 0, Math.PI * 2);
   mmCtx.fillStyle = '#3a7d2e'; mmCtx.fill();
-  // Пруд
+
   mmCtx.beginPath();
   mmCtx.arc(duckPond.x / world.width * 160, duckPond.y / world.height * 160, duckPond.r / world.width * 160, 0, Math.PI * 2);
   mmCtx.fillStyle = '#29b6f6'; mmCtx.fill();
-  // Норы
+
   mmCtx.fillStyle = '#000';
   for (const h of holes) {
     mmCtx.beginPath();
     mmCtx.arc(h.x / world.width * 160, h.y / world.height * 160, 2, 0, Math.PI * 2);
     mmCtx.fill();
   }
-  // Кристаллы
   for (const c of crystals) {
     if (c.hp <= 0) continue;
     mmCtx.fillStyle = c.isMega ? '#ffdd00' : '#00b4ff';
@@ -1005,7 +1096,6 @@ function draw() {
     mmCtx.arc(c.x / world.width * 160, c.y / world.height * 160, c.isMega ? 5 : 3, 0, Math.PI * 2);
     mmCtx.fill();
   }
-  // Игроки
   for (const id in players) {
     const p = players[id];
     if (p.hidden && id != myId) continue;
