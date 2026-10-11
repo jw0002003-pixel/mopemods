@@ -531,13 +531,6 @@ if (p.level === 5 && swingElapsed < 300) {
   ctx.globalAlpha = 1;  // сброс прозрачности
 }
 
-  // След удара (полукруг спереди)
-  ctx.beginPath();
-  ctx.arc(x, y, Math.max(0.1, reach + PR * 0.4), angle - Math.PI / 2, angle + Math.PI / 2);
-  ctx.strokeStyle = `rgba(255, 200, 100, ${progress * 0.5})`;
-  ctx.lineWidth = 6;
-  ctx.stroke();
-}
 
     ctx.font = 'bold 14px sans-serif';
     ctx.textAlign = 'center';
