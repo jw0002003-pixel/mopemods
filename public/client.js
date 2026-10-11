@@ -62,7 +62,6 @@ ws.onmessage = (event) => {
     players = data.players;
     fireballs = data.fireballs || [];
 
-    // 👑 Обновляем isAdmin из сервера (после /admin)
     if (myId && players[myId]) {
       isAdmin = players[myId].isAdmin || false;
     }
@@ -127,6 +126,7 @@ canvas.addEventListener('mousedown', (e) => {
   if (!gameStarted || !myId || !players[myId]) return;
   if (chatOpen) return;
   if (players[myId].dead) return;
+  if (players[myId].holeState === 'inside') return;
 
   const now = Date.now();
   if (now - lastBoostSent >= 300) {
@@ -167,7 +167,6 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'k' || e.key === 'K' || e.key === 'л') {
     if (myId && players[myId] && players[myId].level === 6) ws.send(JSON.stringify({ type: 'ascend' }));
   }
-
   if (e.key === 'ArrowUp' && isAdmin && gameStarted) {
     e.preventDefault();
     ws.send(JSON.stringify({ type: 'admin_level', delta: 1 }));
@@ -520,15 +519,35 @@ function draw() {
       ctx.fill();
     }
 
-    if (p.hidden && p.id == myId) {
-      ctx.globalAlpha = 0.5;
-      const hiddenSize = p.level === 7 ? p.r * 4.0 : p.r * 2.6;
-      if (p.isSanta) drawSkin(ctx, x, y, hiddenSize, 'santa', p.renderAngle !== undefined ? p.renderAngle : p.angle);
-      else drawSkin(ctx, x, y, hiddenSize, p.level, p.renderAngle !== undefined ? p.renderAngle : p.angle);
-      ctx.globalAlpha = 1;
-      ctx.font = 'bold 14px sans-serif'; ctx.textAlign = 'center';
-      ctx.fillStyle = '#ffd700';
-      ctx.fillText('🕳 Спрятан (ЛКМ — выйти)', x, y - p.r - 10);
+    // 🕳 В НОРЕ (своя отрисовка для себя и чужих)
+    if (p.holeState === 'inside' || p.holeState === 'entering' || p.holeState === 'exiting') {
+      if (p.id == myId) {
+        ctx.globalAlpha = 0.85;
+        const hiddenSize = p.level === 7 ? p.r * 4.0 : p.r * 2.6;
+        if (p.isSanta) drawSkin(ctx, x, y, hiddenSize, 'santa', p.renderAngle !== undefined ? p.renderAngle : p.angle);
+        else drawSkin(ctx, x, y, hiddenSize, p.level, p.renderAngle !== undefined ? p.renderAngle : p.angle);
+        ctx.globalAlpha = 1;
+      } else {
+        // Чужие игроки в норе — почти невидимы
+        ctx.globalAlpha = 0.35;
+        const hiddenSize = p.level === 7 ? p.r * 4.0 : p.r * 2.6;
+        if (p.isSanta) drawSkin(ctx, x, y, hiddenSize, 'santa', p.renderAngle !== undefined ? p.renderAngle : p.angle);
+        else drawSkin(ctx, x, y, hiddenSize, p.level, p.renderAngle !== undefined ? p.renderAngle : p.angle);
+        ctx.globalAlpha = 1;
+      }
+      // HP над игроком в норе (для себя)
+      if (p.id == myId && p.hp !== undefined && p.maxHp !== undefined) {
+        const barWidth = p.r * 2, barHeight = 5;
+        const barX = x - barWidth / 2, barY = y - p.r - 18;
+        ctx.fillStyle = 'rgba(0,0,0,0.7)';
+        ctx.fillRect(barX, barY, barWidth, barHeight);
+        const hpPercent = Math.max(0, p.hp / p.maxHp);
+        const hpColor = hpPercent > 0.5 ? '#00ff00' : hpPercent > 0.25 ? '#ffff00' : '#ff0000';
+        ctx.fillStyle = hpColor;
+        ctx.fillRect(barX, barY, barWidth * hpPercent, barHeight);
+        ctx.strokeStyle = '#fff'; ctx.lineWidth = 1;
+        ctx.strokeRect(barX, barY, barWidth, barHeight);
+      }
       continue;
     }
 
@@ -541,19 +560,19 @@ function draw() {
       const angle = p.renderAngle !== undefined ? p.renderAngle : (p.angle || 0);
       const DURATION = 150;
       const elapsed = Date.now() - (p.swingTime || 0);
-      const t = Math.max(0, Math.min(1, elapsed / DURATION));
+      const tt = Math.max(0, Math.min(1, elapsed / DURATION));
       const side = p.nextPawSide || 'left';
       const sideMul = side === 'left' ? -1 : 1;
       const pawAngle = angle + sideMul * (Math.PI / 3.2);
-      const reach = PR * (0.9 + t * 0.7);
-      const alpha = t < 0.7 ? 1 : 1 - (t - 0.7) / 0.3;
+      const reach = PR * (0.9 + tt * 0.7);
+      const alpha = tt < 0.7 ? 1 : 1 - (tt - 0.7) / 0.3;
       const pawX = x + Math.cos(pawAngle) * reach;
       const pawY = y + Math.sin(pawAngle) * reach;
 
       ctx.save();
       ctx.globalAlpha = alpha;
-      if (t < 0.5) {
-        const waveProgress = t / 0.5;
+      if (tt < 0.5) {
+        const waveProgress = tt / 0.5;
         const waveR = PR * (0.6 + waveProgress * 1.2);
         ctx.beginPath();
         ctx.arc(pawX, pawY, waveR, 0, Math.PI * 2);
