@@ -550,7 +550,7 @@ setInterval(() => {
     p.x += p.vx; p.y += p.vy;
 
     // === ОТСТУП У СТЕНЫ: 1.3 × радиус (спрайт 2.6r — касается стены) ===
-    const wallOffset = p.r * 1.3;
+    const wallOffset = p.r * 1.6;
     p.x = Math.max(wallOffset, Math.min(WORLD.width - wallOffset, p.x));
     p.y = Math.max(wallOffset, Math.min(WORLD.height - wallOffset, p.y));
 
