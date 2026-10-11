@@ -39,6 +39,31 @@ function getBiomeAt(x, y) {
   return BIOMES[0];
 }
 
+// 🍓 Мягкое расталкивание игрока и еды
+function resolveFoodCollision(p, f) {
+  const dx = p.x - f.x;
+  const dy = p.y - f.y;
+  const dist = Math.hypot(dx, dy);
+  const minDist = p.r * 0.8 + f.r * 0.8;
+
+  if (dist < minDist && dist > 0.001) {
+    const overlap = minDist - dist;
+    const nx = dx / dist;
+    const ny = dy / dist;
+
+    p.x += nx * overlap * 0.85;
+    p.y += ny * overlap * 0.85;
+
+    const vn = p.vx * nx + p.vy * ny;
+    if (vn < 0) {
+      p.vx -= vn * nx * 0.9;
+      p.vy -= vn * ny * 0.9;
+    }
+    return true;
+  }
+  return false;
+}
+
 const FOOD_TYPES = [
   { name: 'berry',    color: '#e63946', r: 25, xp: 3,  emoji: '🍓', biome: 'forest',  minLevel: 1, bites: 1 },
   { name: 'mushroom', color: '#d4a373', r: 30, xp: 4,  emoji: '🍄', biome: 'forest',  minLevel: 1, bites: 2 },
@@ -502,6 +527,18 @@ setInterval(() => {
     const p = players[id];
     if (p.hidden || p.dead) continue;
 
+    // ⚡ Проверка оглушения
+    if (p.stunned && Date.now() < p.stunned) {
+      p.vx *= 0.85; p.vy *= 0.85;
+      p.vx += p.dashVx; p.vy += p.dashVy;
+      p.dashVx *= 0.75; p.dashVy *= 0.75;
+      p.x += p.vx; p.y += p.vy;
+      const wo = p.r * 0.5;
+      p.x = Math.max(wo, Math.min(WORLD.width - wo, p.x));
+      p.y = Math.max(wo, Math.min(WORLD.height - wo, p.y));
+      continue;
+    }
+
     let maxSpeed;
     if (p.isSanta) maxSpeed = p.santaSpeed * 1.5;
     else {
@@ -550,10 +587,22 @@ setInterval(() => {
 
     p.x += p.vx; p.y += p.vy;
 
-    // === ОТСТУП У СТЕНЫ: 1.3 × радиус (спрайт 2.6r — касается стены) ===
+    // === ОТСТУП У СТЕНЫ ===
     const wallOffset = p.r * 0.5;
     p.x = Math.max(wallOffset, Math.min(WORLD.width - wallOffset, p.x));
     p.y = Math.max(wallOffset, Math.min(WORLD.height - wallOffset, p.y));
+
+    // 🍓 Мягкое столкновение с едой и мясом
+    if (!p.hidden && !p.dead) {
+      for (const f of food) {
+        if (f.hp <= 0) continue;
+        resolveFoodCollision(p, f);
+      }
+      for (const m of meat) {
+        if (m.hp <= 0) continue;
+        resolveFoodCollision(p, m);
+      }
+    }
 
     let aimDx, aimDy;
     if (p.moveDirX !== null && p.moveDirX !== undefined && (Math.abs(p.moveDirX) > 0.01 || Math.abs(p.moveDirY) > 0.01)) {
@@ -643,17 +692,43 @@ setInterval(() => {
     if (!players[id]) continue;
     const p = players[id];
     if (p.hidden || p.isSanta || p.dead) continue;
+
+    // 🍓 ЕДА — укус с отскоком
     for (let i = food.length - 1; i >= 0; i--) {
       const f = food[i];
-      if (Math.hypot(p.x - f.x, p.y - f.y) < p.r + f.r * 0.5) {
+      if (f.hp <= 0) continue;
+
+      const distToFood = Math.hypot(p.x - f.x, p.y - f.y);
+      if (distToFood < p.r * 0.9 + f.r * 0.7) {
         if (p.level < f.minLevel) continue;
+
         const now = Date.now();
-        if (!p.lastFoodBite || now - p.lastFoodBite >= 400) {
+        if (!p.lastFoodBite || now - p.lastFoodBite >= 350) {
           p.lastFoodBite = now;
+
           f.hp -= 1;
+
+          const nxx = (p.x - f.x) / (distToFood || 1);
+          const nyy = (p.y - f.y) / (distToFood || 1);
+          const recoil = 4 + p.r * 0.15;
+          p.vx -= nxx * recoil;
+          p.vy -= nyy * recoil;
+
+          const minDist = p.r * 0.9 + f.r * 0.7;
+          if (distToFood < minDist) {
+            const push = (minDist - distToFood);
+            p.x += nxx * push * 0.9;
+            p.y += nyy * push * 0.9;
+          }
+
           p.score += f.xp || 1;
           p.hp = Math.min(p.maxHp, p.hp + 1);
-          if (f.hp <= 0) { food.splice(i, 1); food.push(spawnFood()); }
+
+          if (f.hp <= 0) {
+            food.splice(i, 1);
+            food.push(spawnFood());
+          }
+
           const currentAnimal = getAnimalByLevel(p.level);
           if (p.score >= currentAnimal.xpToNext && p.level < 6) {
             p.level += 1;
@@ -666,16 +741,36 @@ setInterval(() => {
       }
     }
 
+    // 🍖 МЯСО — укус с отскоком
     for (let i = meat.length - 1; i >= 0; i--) {
       const m = meat[i];
-      if (Math.hypot(p.x - m.x, p.y - m.y) < p.r + m.r * 0.5) {
+      if (m.hp <= 0) continue;
+
+      const distToMeat = Math.hypot(p.x - m.x, p.y - m.y);
+      if (distToMeat < p.r * 0.9 + m.r * 0.7) {
         const now = Date.now();
         if (!p.lastFoodBite || now - p.lastFoodBite >= 300) {
           p.lastFoodBite = now;
+
           m.hp -= 1;
+
+          const nxx = (p.x - m.x) / (distToMeat || 1);
+          const nyy = (p.y - m.y) / (distToMeat || 1);
+          const recoil = 4 + p.r * 0.15;
+          p.vx -= nxx * recoil;
+          p.vy -= nyy * recoil;
+
+          const minDist = p.r * 0.9 + m.r * 0.7;
+          if (distToMeat < minDist) {
+            const push = (minDist - distToMeat);
+            p.x += nxx * push * 0.9;
+            p.y += nyy * push * 0.9;
+          }
+
           p.score += Math.ceil(m.xp / m.maxHp);
           p.hp = Math.min(p.maxHp, p.hp + 2);
-          if (m.hp <= 0) { meat.splice(i, 1); }
+          if (m.hp <= 0) meat.splice(i, 1);
+
           const currentAnimal = getAnimalByLevel(p.level);
           if (p.score >= currentAnimal.xpToNext && p.level < 6) {
             p.level += 1;
@@ -688,6 +783,7 @@ setInterval(() => {
       }
     }
 
+    // 🎁 ПОДАРКИ
     for (let i = presents.length - 1; i >= 0; i--) {
       const pr = presents[i];
       if (Math.hypot(p.x - pr.x, p.y - pr.y) < p.r + pr.r) {
@@ -699,6 +795,7 @@ setInterval(() => {
     }
   }
 
+  // 💎 КРИСТАЛЛЫ
   for (const id in players) {
     if (!players[id]) continue;
     const p = players[id];
