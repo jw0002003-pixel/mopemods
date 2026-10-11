@@ -272,8 +272,13 @@ wss.on('connection', (ws) => {
         if (p.isSanta) return;
         const biome = getBiomeAt(p.x, p.y);
         if (biome.name !== 'water' && biome.name !== 'river') return;
-        // Ныряем — переключаем underwater
-        p.underwater = !p.underwater;
+        // Зажимаем W — ныряем
+        if (p.air > 0) p.underwater = true;
+      }
+      if (data.type === 'diveRelease' && players[id]) {
+        const p = players[id];
+        // Отпускаем W — всплываем
+        p.underwater = false;
       }
       if (data.type === 'boost' && players[id]) {
         const p = players[id];
