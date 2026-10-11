@@ -549,10 +549,9 @@ setInterval(() => {
       p.vy = (p.vy / v) * maxAllowed;
     }
 
-p.x += p.vx; p.y += p.vy;
-const wallOverlap = p.r * 0.4;
-p.x = Math.max(-wallOverlap, Math.min(WORLD.width + wallOverlap, p.x));
-p.y = Math.max(-wallOverlap, Math.min(WORLD.height + wallOverlap, p.y));
+    p.x += p.vx; p.y += p.vy;
+    p.x = Math.max(p.r, Math.min(WORLD.width - p.r, p.x));
+    p.y = Math.max(p.r, Math.min(WORLD.height - p.r, p.y));
 
     // Поворот
     let aimDx, aimDy;
