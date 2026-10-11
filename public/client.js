@@ -486,7 +486,7 @@ if (p.swingActive && p.level === 5 && swingElapsed < 400) {
       const elapsed = Date.now() - (p.swingTime || 0);
       const t = Math.min(1, elapsed / swingDuration);
       const progress = t < 0.5 ? t * 2 : (1 - t) * 2;
-      const angle = p.renderAngle !== undefined ? p.renderAngle : (p.angle || 0);
+      const angle = (p.renderAngle !== undefined ? p.renderAngle : (p.angle || 0)) - Math.PI / 2;
       const reach = PR * 0.6 + progress * PR * 2.5;
 
       const pawX = x + Math.cos(angle) * reach;
