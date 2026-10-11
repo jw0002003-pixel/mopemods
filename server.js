@@ -599,30 +599,6 @@ setInterval(() => {
     const p = players[id];
     if (p.dead) continue;
 
-    // 🕳 ЗАХОД В НОРУ
-    if (p.holeState === 'entering') {
-      const dx = p.holeTargetX - p.x;
-      const dy = p.holeTargetY - p.y;
-      const dist = Math.hypot(dx, dy);
-      const step = HOLE_ENTER_SPEED / TICK_RATE;
-
-      if (dist <= step) {
-        p.x = p.holeTargetX;
-        p.y = p.holeTargetY;
-        p.holeState = 'inside';
-        p.hidden = true;
-        p.vx = 0; p.vy = 0;
-        // 🚫 Отправляем сигнал 3 раза — гарантирует, что клиент успеет
-        p.skipInterpolation = true;
-        p.skipInterpolationFrames = 3;
-      } else {
-        p.x += (dx / dist) * step;
-        p.y += (dy / dist) * step;
-        p.angle = Math.atan2(dy, dx);
-      }
-      continue;
-    }
-
     // 🕳 В НОРЕ
     if (p.holeState === 'inside') {
       p.hidden = true;
@@ -657,7 +633,7 @@ setInterval(() => {
           } else {
             p.holeState = 'exiting';
             p.skipInterpolation = true;
-            p.skipInterpolationFrames = 3;    // ← ДОБАВИТЬ
+            p.skipInterpolationFrames = 3;
           }
         }
       }
@@ -697,9 +673,8 @@ setInterval(() => {
           p.holeCooldown = Date.now() + 800;
           p.vx = nx * 3;
           p.vy = ny * 3;
-          // 🚫 Сброс интерполяции для устранения фриза
           p.skipInterpolation = true;
-          p.skipInterpolationFrames = 3;   // ← ДОБАВИТЬ
+          p.skipInterpolationFrames = 3;
         }
       } else {
         p.holeState = 'outside';
@@ -793,18 +768,23 @@ setInterval(() => {
     p.x = Math.max(wallOffset, Math.min(WORLD.width - wallOffset, p.x));
     p.y = Math.max(wallOffset, Math.min(WORLD.height - wallOffset, p.y));
 
-    // 🕳 АВТОЗАХОД В НОРУ
+    // 🕳 АВТОЗАХОД В НОРУ (мгновенный)
     if (p.holeState === 'outside' && p.level < 6 && p.r <= 60 &&
         (!p.holeCooldown || Date.now() >= p.holeCooldown)) {
       for (const h of holes) {
         const d = Math.hypot(h.x - p.x, h.y - p.y);
         if (d < h.r * 0.7) {
-          p.holeState = 'entering';
+          p.holeState = 'inside';
           p.inHole = h.id;
           p.holeTargetX = h.x;
           p.holeTargetY = h.y;
+          p.x = h.x;
+          p.y = h.y;
+          p.hidden = true;
           p.vx = 0; p.vy = 0;
           p.dashVx = 0; p.dashVy = 0;
+          p.skipInterpolation = true;
+          p.skipInterpolationFrames = 3;
           break;
         }
       }
@@ -1131,5 +1111,5 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log(`Сервер запущен: http://localhost:${PORT}`);
   console.log(`👑 Админ-пароль: ${ADMIN_PASSWORD}`);
   console.log(`🗺 Карта: ${WORLD.width}x${WORLD.height}`);
-  console.log(`🕳 Механика норы: плавный вход/выход (вариант A)`);
+  console.log(`🕳 Механика норы: мгновенный вход, плавный выход`);
 });
