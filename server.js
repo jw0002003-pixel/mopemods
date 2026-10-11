@@ -272,12 +272,10 @@ wss.on('connection', (ws) => {
         if (p.isSanta) return;
         const biome = getBiomeAt(p.x, p.y);
         if (biome.name !== 'water' && biome.name !== 'river') return;
-        // Зажимаем W — ныряем
         if (p.air > 0) p.underwater = true;
       }
       if (data.type === 'diveRelease' && players[id]) {
         const p = players[id];
-        // Отпускаем W — всплываем
         p.underwater = false;
       }
       if (data.type === 'boost' && players[id]) {
@@ -565,20 +563,17 @@ setInterval(() => {
     const inWater = currentBiomeDive.name === 'water' || currentBiomeDive.name === 'river';
 
     if (p.underwater && !inWater) {
-      // Вышел из воды — всплываем
       p.underwater = false;
     }
 
     if (p.underwater) {
-      // Под водой — тратим кислород
-      p.air -= 100 / (5 * TICK_RATE); // 5 секунд до нуля
+      p.air -= 100 / (5 * TICK_RATE);
       if (p.air <= 0) {
         p.air = 0;
-        p.underwater = false; // Авто-всплытие
+        p.underwater = false;
       }
     } else {
-      // На поверхности — восстанавливаем кислород
-      p.air = Math.min(p.maxAir, p.air + 100 / (2 * TICK_RATE)); // 2 секунды до полного
+      p.air = Math.min(p.maxAir, p.air + 100 / (2 * TICK_RATE));
     }
     p.air = Math.max(0, Math.min(p.maxAir, p.air));
 
@@ -646,7 +641,6 @@ setInterval(() => {
       const dist = Math.hypot(dx, dy);
       const step = HOLE_ENTER_SPEED / TICK_RATE;
 
-      // 🎯 Поворот в сторону курсора (не в центр норы)
       const aimX = p.moveDirX || 0;
       const aimY = p.moveDirY || 0;
       if (Math.hypot(aimX, aimY) > 0.01) {
@@ -783,6 +777,7 @@ setInterval(() => {
       if (currentBiome.name === 'water') maxSpeed *= 0.6;
       if (currentBiome.name === 'river') maxSpeed *= 0.8;
       if (currentBiome.name === 'snow') maxSpeed *= 0.8;
+      if (p.underwater) maxSpeed *= 0.5;
     }
 
     let riverBonusX = 0, riverBonusY = 0;
@@ -949,7 +944,9 @@ setInterval(() => {
     if (p.hidden || p.isSanta || p.dead) continue;
     if (p.holeState !== 'outside') continue;
 
+    // 🍓 ЕДА (нельзя есть под водой)
     for (let i = food.length - 1; i >= 0; i--) {
+      if (p.underwater) break;
       const f = food[i];
       if (f.hp <= 0) continue;
       const distToFood = Math.hypot(p.x - f.x, p.y - f.y);
@@ -986,7 +983,9 @@ setInterval(() => {
       }
     }
 
+    // 🍖 МЯСО (нельзя есть под водой)
     for (let i = meat.length - 1; i >= 0; i--) {
+      if (p.underwater) break;
       const m = meat[i];
       if (m.hp <= 0) continue;
       const distToMeat = Math.hypot(p.x - m.x, p.y - m.y);
@@ -1019,7 +1018,9 @@ setInterval(() => {
       }
     }
 
+    // 🎁 ПОДАРКИ (нельзя есть под водой)
     for (let i = presents.length - 1; i >= 0; i--) {
+      if (p.underwater) break;
       const pr = presents[i];
       if (Math.hypot(p.x - pr.x, p.y - pr.y) < p.r + pr.r) {
         p.score += pr.xp;
@@ -1030,7 +1031,7 @@ setInterval(() => {
     }
   }
 
-  // 💎 КРИСТАЛЛЫ
+  // 💎 КРИСТАЛЛЫ (можно есть под водой)
   for (const id in players) {
     if (!players[id]) continue;
     const p = players[id];
@@ -1113,6 +1114,7 @@ setInterval(() => {
       const bigger = p1.r > p2.r ? p1 : p2;
       const smaller = p1.r > p2.r ? p2 : p1;
       if (bigger.r / smaller.r >= 1.2 && dist < bigger.r) {
+        if (smaller.underwater) continue;   // 🫧 Под водой неуязвим
         const tnow = Date.now();
         if (!smaller.lastHit || tnow - smaller.lastHit >= 500) {
           smaller.lastHit = tnow;
@@ -1179,5 +1181,5 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log(`Сервер запущен: http://localhost:${PORT}`);
   console.log(`👑 Админ-пароль: ${ADMIN_PASSWORD}`);
   console.log(`🗺 Карта: ${WORLD.width}x${WORLD.height}`);
-  console.log(`🌊 Ныряние на W (уровни 1-5)`);
+  console.log(`🌊 Ныряние на W (уровни 1-5) + неуязвимость`);
 });
