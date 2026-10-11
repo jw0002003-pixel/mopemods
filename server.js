@@ -129,7 +129,7 @@ function spawnFood() {
     x, y, r: type.r, color: type.color, type: type.name,
     emoji: type.emoji, xp: type.xp, minLevel: type.minLevel, biome: type.biome,
     hp: type.bites, maxHp: type.bites, bites: type.bites,
-    vx: 0, vy: 0   // 🍓 скорость для плавного скольжения
+    vx: 0, vy: 0
   };
 }
 for (let i = 0; i < FOOD_COUNT; i++) food.push(spawnFood());
@@ -599,13 +599,16 @@ setInterval(() => {
     p.y = Math.max(wallOffset, Math.min(WORLD.height - wallOffset, p.y));
 
     // 🍓 Мягкое столкновение с едой и мясом (драконы — проходят сквозь)
+    // Летящую еду не трогаем — пусть отскакивает
     if (!p.hidden && !p.dead) {
       for (const f of food) {
         if (f.hp <= 0) continue;
+        if (Math.abs(f.vx) > 0.5 || Math.abs(f.vy) > 0.5) continue;
         resolveFoodCollision(p, f);
       }
       for (const m of meat) {
         if (m.hp <= 0) continue;
+        if (Math.abs(m.vx) > 0.5 || Math.abs(m.vy) > 0.5) continue;
         resolveFoodCollision(p, m);
       }
     }
@@ -633,11 +636,11 @@ setInterval(() => {
   for (const f of food) {
     if (f.hp <= 0) continue;
     if (f.vx === undefined) { f.vx = 0; f.vy = 0; }
-    if (Math.abs(f.vx) > 0.05 || Math.abs(f.vy) > 0.05) {
+    if (Math.abs(f.vx) > 0.1 || Math.abs(f.vy) > 0.1) {
       f.x += f.vx;
       f.y += f.vy;
-      f.vx *= 0.90;
-      f.vy *= 0.90;
+      f.vx *= 0.95;
+      f.vy *= 0.95;
       const margin = f.r;
       f.x = Math.max(margin, Math.min(WORLD.width - margin, f.x));
       f.y = Math.max(margin, Math.min(WORLD.height - margin, f.y));
@@ -650,11 +653,11 @@ setInterval(() => {
   for (const m of meat) {
     if (m.hp <= 0) continue;
     if (m.vx === undefined) { m.vx = 0; m.vy = 0; }
-    if (Math.abs(m.vx) > 0.05 || Math.abs(m.vy) > 0.05) {
+    if (Math.abs(m.vx) > 0.1 || Math.abs(m.vy) > 0.1) {
       m.x += m.vx;
       m.y += m.vy;
-      m.vx *= 0.90;
-      m.vy *= 0.90;
+      m.vx *= 0.95;
+      m.vy *= 0.95;
       const margin = m.r;
       m.x = Math.max(margin, Math.min(WORLD.width - margin, m.x));
       m.y = Math.max(margin, Math.min(WORLD.height - margin, m.y));
@@ -762,10 +765,10 @@ setInterval(() => {
             f.hp -= 1;
           }
 
-          // 🐉 Сила толчка еды
+          // 🐉 Сила толчка еды — обычные слабо, дракон сильно
           const knockback = isDragon
-            ? 14 + p.r * 0.08
-            : 3 + p.r * 0.05;
+            ? 25 + p.r * 0.12
+            : 8 + p.r * 0.10;
 
           const nx = (f.x - p.x) / (distToFood || 1);
           const ny = (f.y - p.y) / (distToFood || 1);
@@ -822,8 +825,8 @@ setInterval(() => {
           }
 
           const knockback = isDragon
-            ? 14 + p.r * 0.08
-            : 3 + p.r * 0.05;
+            ? 25 + p.r * 0.12
+            : 8 + p.r * 0.10;
 
           const nx = (m.x - p.x) / (distToMeat || 1);
           const ny = (m.y - p.y) / (distToMeat || 1);
