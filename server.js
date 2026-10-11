@@ -599,12 +599,23 @@ setInterval(() => {
     const p = players[id];
     if (p.dead) continue;
 
-    // 🕳 ЗАХОД В НОРУ (плавно, без фриза)
+    // 🕳 ЗАХОД В НОРУ
     if (p.holeState === 'entering') {
       const dx = p.holeTargetX - p.x;
       const dy = p.holeTargetY - p.y;
       const dist = Math.hypot(dx, dy);
       const step = HOLE_ENTER_SPEED / TICK_RATE;
+
+      // 🎯 Поворот в сторону курсора (не в центр норы)
+      const aimX = p.moveDirX || 0;
+      const aimY = p.moveDirY || 0;
+      if (Math.hypot(aimX, aimY) > 0.01) {
+        const targetAngle = Math.atan2(aimY, aimX);
+        let diff = targetAngle - p.angle;
+        while (diff > Math.PI) diff -= Math.PI * 2;
+        while (diff < -Math.PI) diff += Math.PI * 2;
+        p.angle += diff * 0.3;
+      }
 
       if (dist <= step) {
         p.x = p.holeTargetX;
@@ -617,7 +628,6 @@ setInterval(() => {
       } else {
         p.x += (dx / dist) * step;
         p.y += (dy / dist) * step;
-        p.angle = Math.atan2(dy, dx);
       }
       continue;
     }
