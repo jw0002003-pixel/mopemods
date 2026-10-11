@@ -1,17 +1,20 @@
 module.exports = {
   name: 'Удар лапой',
   key: 'Q',
-  cooldown: 1500,
+  cooldown: 500,
   use(player, players, world, helpers) {
-    // Сообщить клиенту — проиграть анимацию
     player.swingActive = true;
     player.swingTime = Date.now();
     player.swingAngle = player.angle || 0;
+
+    // Чередование стороны: left → right → left → right...
+    player.nextPawSide = player.nextPawSide === 'left' ? 'right' : 'left';
+
     setTimeout(() => {
       if (players[player.id]) {
         players[player.id].swingActive = false;
       }
-    }, 300);
+    }, 150);
 
     // Урон — только в полукруг спереди (радиус 150, угол ±60°)
     const hitRange = 150;
