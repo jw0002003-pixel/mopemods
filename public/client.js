@@ -468,8 +468,9 @@ function draw() {
 
     if (p.hidden && p.id == myId) {
       ctx.globalAlpha = 0.5;
-      if (p.isSanta) drawSkin(ctx, x, y, p.r * 2.6, 'santa', p.renderAngle !== undefined ? p.renderAngle : p.angle);
-      else drawSkin(ctx, x, y, p.r * 2.6, p.level, p.renderAngle !== undefined ? p.renderAngle : p.angle);
+      const hiddenSize = p.level === 7 ? p.r * 4.0 : p.r * 2.6;
+if (p.isSanta) drawSkin(ctx, x, y, hiddenSize, 'santa', p.renderAngle !== undefined ? p.renderAngle : p.angle);
+else drawSkin(ctx, x, y, hiddenSize, p.level, p.renderAngle !== undefined ? p.renderAngle : p.angle);Ы
       ctx.globalAlpha = 1;
       ctx.font = 'bold 14px sans-serif'; ctx.textAlign = 'center';
       ctx.fillStyle = '#ffd700';
@@ -477,8 +478,9 @@ function draw() {
       continue;
     }
 
-    if (p.isSanta) drawSkin(ctx, x, y, p.r * 2.6, 'santa', p.renderAngle !== undefined ? p.renderAngle : p.angle);
-    else drawSkin(ctx, x, y, p.r * 2.6, p.level, p.renderAngle !== undefined ? p.renderAngle : p.angle);
+    const skinSize = p.level === 7 ? p.r * 4.0 : p.r * 2.6;
+if (p.isSanta) drawSkin(ctx, x, y, skinSize, 'santa', p.renderAngle !== undefined ? p.renderAngle : p.angle);
+else drawSkin(ctx, x, y, skinSize, p.level, p.renderAngle !== undefined ? p.renderAngle : p.angle);
 
     if (p.boostActive) {
       ctx.beginPath(); ctx.arc(x, y, p.r * 1.4, 0, Math.PI * 2);
