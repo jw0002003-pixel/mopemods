@@ -269,7 +269,7 @@ swingActive: false, swingTime: 0, swingAngle: 0,
         if (now - (p.lastAbility || 0) < ability.cooldown) return;
         p.lastAbility = now;
 
-        const helpers = { fireballs, holes };
+        const helpers = { fireballs, holes, stunBalls: [] };
         const result = ability.use(p, players, WORLD, helpers);
 
         if (result && result.message) {
