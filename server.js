@@ -47,7 +47,11 @@ function getBiomeAt(x, y) {
   return BIOMES[0];
 }
 
-// 🍓 Мягкое расталкивание игрока и еды
+// 🕳 Скорости норы (пикс/сек)
+const HOLE_ENTER_SPEED = 50;  // заход
+const HOLE_EXIT_SPEED = 60;   // выход
+const HOLE_MOVE_MULT = 0.5;   // множитель скорости внутри
+
 function resolveFoodCollision(p, f) {
   if (p.level >= 6) return false;
   const dx = p.x - f.x;
@@ -68,15 +72,13 @@ function resolveFoodCollision(p, f) {
   return false;
 }
 
-// 💎 Расталкивание игрока и кристалла (тяжёлый, плавно толкается)
 function resolveCrystalCollision(p, c) {
   if (c.hp <= 0) return false;
-  if (p.level >= 6) return false; // дракон проходит сквозь
+  if (p.level >= 6) return false;
 
   const dx = p.x - c.x;
   const dy = p.y - c.y;
   const dist = Math.hypot(dx, dy);
-  // Кристалл тяжёлый — увеличиваем зону взаимодействия
   const minDist = p.r * 0.85 + c.r * 0.85;
 
   if (dist < minDist && dist > 0.001) {
@@ -84,16 +86,13 @@ function resolveCrystalCollision(p, c) {
     const nx = dx / dist;
     const ny = dy / dist;
 
-    // Игрок выталкивается
     p.x += nx * overlap * 0.6;
     p.y += ny * overlap * 0.6;
 
-    // Кристалл получает плавный толчок (тяжёлый, но не дёргается)
-    const pushStrength = 0.25; // 🐌 медленно, но заметно
+    const pushStrength = 0.25;
     c.vx -= nx * overlap * pushStrength;
     c.vy -= ny * overlap * pushStrength;
 
-    // Ограничиваем максимальную скорость — тяжёлый камень не разгонится
     const maxCrystalSpeed = 3.5;
     const cSpeed = Math.hypot(c.vx, c.vy);
     if (cSpeed > maxCrystalSpeed) {
@@ -101,12 +100,8 @@ function resolveCrystalCollision(p, c) {
       c.vy = (c.vy / cSpeed) * maxCrystalSpeed;
     }
 
-    // Гасим скорость игрока в сторону кристалла
     const vn = p.vx * nx + p.vy * ny;
-    if (vn < 0) {
-      p.vx -= vn * nx * 0.85;
-      p.vy -= vn * ny * 0.85;
-    }
+    if (vn < 0) { p.vx -= vn * nx * 0.85; p.vy -= vn * ny * 0.85; }
     return true;
   }
   return false;
@@ -242,7 +237,10 @@ wss.on('connection', (ws) => {
     spectating: false, inArena: false,
     previousScore: 0,
     holeCooldown: 0,
-    lastAbility: 0
+    lastAbility: 0,
+    holeState: 'outside',
+    holeTargetX: 0,
+    holeTargetY: 0
   };
   players[id].biome = getBiomeAt(players[id].x, players[id].y).name;
 
@@ -271,20 +269,7 @@ wss.on('connection', (ws) => {
       if (data.type === 'boost' && players[id]) {
         const p = players[id];
         if (p.dead) return;
-
-        if (p.hidden) {
-          p.hidden = false;
-          p.inHole = null;
-          const dirX = p.moveDirX || 1;
-          const dirY = p.moveDirY || 0;
-          const dist = Math.hypot(dirX, dirY) || 1;
-          p.x += (dirX / dist) * 120;
-          p.y += (dirY / dist) * 120;
-          p.x = Math.max(p.r, Math.min(WORLD.width - p.r, p.x));
-          p.y = Math.max(p.r, Math.min(WORLD.height - p.r, p.y));
-          p.holeCooldown = Date.now() + 1500;
-          return;
-        }
+        if (p.holeState === 'inside') return;
 
         const now = Date.now();
         if (now - p.lastBoost < 1000) return;
@@ -406,7 +391,6 @@ wss.on('connection', (ws) => {
         }
       }
 
-      // 👑 АДМИН: смена уровня стрелками
       if (data.type === 'admin_level' && players[id]) {
         const p = players[id];
         if (!p.isAdmin) {
@@ -457,6 +441,7 @@ wss.on('connection', (ws) => {
         p.isSanta = false;
         p.hidden = false;
         p.inHole = null;
+        p.holeState = 'outside';
         p.vx = 0; p.vy = 0;
         p.dashVx = 0; p.dashVy = 0;
         p.eatenLevels = [];
@@ -474,6 +459,7 @@ wss.on('connection', (ws) => {
         p.isSanta = false;
         p.hidden = false;
         p.inHole = null;
+        p.holeState = 'outside';
         p.vx = 0; p.vy = 0;
         p.dashVx = 0; p.dashVy = 0;
         const biome = BIOMES[Math.floor(Math.random() * BIOMES.length)];
@@ -558,6 +544,7 @@ setInterval(() => {
     if (p.hidden) p.hp = Math.min(p.maxHp, p.hp + 2);
     else if (p.hp < p.maxHp) p.hp = Math.min(p.maxHp, p.hp + 0.3);
 
+    // 💧 Вода — расходуется и в норе, и снаружи
     if (p.level >= 6 || p.isSanta) {
       p.water = p.maxWater;
     } else {
@@ -609,10 +596,101 @@ setInterval(() => {
     }
   }
 
+  // === ДВИЖЕНИЕ ИГРОКОВ ===
   for (const id in players) {
     if (!players[id]) continue;
     const p = players[id];
-    if (p.hidden || p.dead) continue;
+    if (p.dead) continue;
+
+    // 🕳 СОСТОЯНИЕ «ЗАХОД» — плавно в центр норы
+    if (p.holeState === 'entering') {
+      const dx = p.holeTargetX - p.x;
+      const dy = p.holeTargetY - p.y;
+      const dist = Math.hypot(dx, dy);
+      const step = HOLE_ENTER_SPEED / TICK_RATE;
+
+      if (dist <= step) {
+        p.x = p.holeTargetX;
+        p.y = p.holeTargetY;
+        p.holeState = 'inside';
+        p.hidden = true;
+        p.vx = 0; p.vy = 0;
+      } else {
+        p.x += (dx / dist) * step;
+        p.y += (dy / dist) * step;
+      }
+      continue;
+    }
+
+    // 🕳 СОСТОЯНИЕ «В НОРЕ» — игрок двигается к краю норы (в сторону курсора)
+    if (p.holeState === 'inside') {
+      p.hidden = true;
+      p.x = p.holeTargetX;
+      p.y = p.holeTargetY;
+      p.vx = 0; p.vy = 0;
+
+      // Если игрок двигает курсор — пытается выйти
+      const dirX = p.moveDirX || 0;
+      const dirY = p.moveDirY || 0;
+      const dirDist = Math.hypot(dirX, dirY);
+
+      if (dirDist > 0.15 && p.movePower > 0.1) {
+        // Начинаем выход в сторону движения
+        p.holeState = 'exiting';
+      }
+      continue;
+    }
+
+    // 🕳 СОСТОЯНИЕ «ВЫХОД» — плавно к краю норы, потом наружу
+    if (p.holeState === 'exiting') {
+      const dirX = p.moveDirX || 0;
+      const dirY = p.moveDirY || 0;
+      const dirDist = Math.hypot(dirX, dirY);
+
+      // Если перестал двигать — возвращаемся внутрь
+      if (dirDist < 0.1 || p.movePower < 0.05) {
+        p.holeState = 'inside';
+        continue;
+      }
+
+      const nx = dirX / dirDist;
+      const ny = dirY / dirDist;
+      const step = HOLE_EXIT_SPEED / TICK_RATE;
+
+      // Смещаемся к краю норы
+      p.x += nx * step;
+      p.y += ny * step;
+
+      p.hidden = true;
+      p.vx = 0; p.vy = 0;
+
+      // Проверяем — вышли ли за границу норы
+      const hole = holes.find(h => h.id === p.inHole);
+      if (hole) {
+        const distFromCenter = Math.hypot(p.x - hole.x, p.y - hole.y);
+        if (distFromCenter >= hole.r * 0.85) {
+          // Выходим наружу — ставим за краем норы
+          p.x = hole.x + nx * (hole.r + p.r * 0.3);
+          p.y = hole.y + ny * (hole.r + p.r * 0.3);
+          p.holeState = 'outside';
+          p.hidden = false;
+          p.inHole = null;
+          p.holeCooldown = Date.now() + 800;
+          // Даём немного скорости в сторону движения
+          p.vx = nx * 3;
+          p.vy = ny * 3;
+        }
+      } else {
+        // Норы нет — выходим
+        p.holeState = 'outside';
+        p.hidden = false;
+        p.inHole = null;
+      }
+      continue;
+    }
+
+    // === ОБЫЧНОЕ ДВИЖЕНИЕ (вне норы) ===
+    if (p.hidden) continue;
 
     if (p.stunned && Date.now() < p.stunned) {
       p.vx *= 0.85; p.vy *= 0.85;
@@ -695,8 +773,25 @@ setInterval(() => {
     p.x = Math.max(wallOffset, Math.min(WORLD.width - wallOffset, p.x));
     p.y = Math.max(wallOffset, Math.min(WORLD.height - wallOffset, p.y));
 
-    // 🍓 Столкновение с едой
-    if (!p.hidden && !p.dead) {
+    // 🕳 АВТОЗАХОД В НОРУ
+    if (p.holeState === 'outside' && p.level < 6 && p.r <= 60 &&
+        (!p.holeCooldown || Date.now() >= p.holeCooldown)) {
+      for (const h of holes) {
+        const d = Math.hypot(h.x - p.x, h.y - p.y);
+        if (d < h.r * 0.7) {
+          p.holeState = 'entering';
+          p.inHole = h.id;
+          p.holeTargetX = h.x;
+          p.holeTargetY = h.y;
+          p.vx = 0; p.vy = 0;
+          p.dashVx = 0; p.dashVy = 0;
+          break;
+        }
+      }
+    }
+
+    // 🍓 Столкновение с едой (только когда снаружи)
+    if (p.holeState === 'outside' && !p.dead) {
       for (const f of food) {
         if (f.hp <= 0) continue;
         if (Math.abs(f.vx) > 0.15 || Math.abs(f.vy) > 0.15) continue;
@@ -707,7 +802,6 @@ setInterval(() => {
         if (Math.abs(m.vx) > 0.15 || Math.abs(m.vy) > 0.15) continue;
         resolveFoodCollision(p, m);
       }
-      // 💎 Столкновение с кристаллами
       for (const c of crystals) {
         if (c.hp <= 0) continue;
         resolveCrystalCollision(p, c);
@@ -758,11 +852,10 @@ setInterval(() => {
     } else { m.vx = 0; m.vy = 0; }
   }
 
-  // 💎 ФИЗИКА КРИСТАЛЛОВ (тяжёлые, медленно останавливаются)
+  // 💎 ФИЗИКА КРИСТАЛЛОВ
   for (const c of crystals) {
     if (c.hp <= 0) continue;
     if (c.vx === undefined) { c.vx = 0; c.vy = 0; }
-    // Тяжёлые — медленное затухание, но не бесконечное
     c.vx *= 0.96;
     c.vy *= 0.96;
     if (Math.abs(c.vx) > 0.01 || Math.abs(c.vy) > 0.01) {
@@ -783,79 +876,20 @@ setInterval(() => {
       holes.splice(i, 1);
     }
   }
-  // АВТОЗАХОД В НОРКУ
-  for (const id in players) {
-    if (!players[id]) continue;
-    const p = players[id];
-    if (p.dead || p.hidden) continue;
-    if (p.level >= 6) continue;
-    if (p.r > 60) continue;
-    if (p.holeCooldown && Date.now() < p.holeCooldown) continue;
 
-    for (const h of holes) {
-      const d = Math.hypot(h.x - p.x, h.y - p.y);
-      if (d < h.r * 0.5) {
-        p.hidden = true;
-        p.inHole = h.id;
-        p.x = h.x; p.y = h.y;
-        p.vx = 0; p.vy = 0;
-        p.dashVx = 0; p.dashVy = 0;
-        break;
-      }
-    }
-  }
-
-  for (const id in players) {
-    if (!players[id]) continue;
-    const p = players[id];
-    if (!p.hidden || p.dead) continue;
-
-    const hole = holes.find(h => h.id === p.inHole);
-    if (!hole) { p.hidden = false; continue; }
-
-    const dirX = p.moveDirX || 0;
-    const dirY = p.moveDirY || 0;
-    const dirDist = Math.hypot(dirX, dirY);
-
-    if (dirDist > 0.01) {
-      const targetAngle = Math.atan2(dirY, dirX);
-      let diff = targetAngle - p.angle;
-      while (diff > Math.PI) diff -= Math.PI * 2;
-      while (diff < -Math.PI) diff += Math.PI * 2;
-      p.angle += diff * 0.3;
-    }
-
-    if (dirDist > 0.1 && p.movePower > 0.05) {
-      const speed = 50;
-      p.x += (dirX / dirDist) * speed * p.movePower;
-      p.y += (dirY / dirDist) * speed * p.movePower;
-
-      const dx = p.x - hole.x;
-      const dy = p.y - hole.y;
-      const distFromCenter = Math.hypot(dx, dy);
-      const innerRadius = hole.r * 0.7;
-
-      if (distFromCenter > innerRadius) {
-        const ang = Math.atan2(dy, dx);
-        p.x = hole.x + Math.cos(ang) * innerRadius;
-        p.y = hole.y + Math.sin(ang) * innerRadius;
-      }
-    }
-  }
-
+  // === ПОЕДАНИЕ ===
   for (const id in players) {
     if (!players[id]) continue;
     const p = players[id];
     if (p.hidden || p.isSanta || p.dead) continue;
+    if (p.holeState !== 'outside') continue;
 
     // 🍓 ЕДА
     for (let i = food.length - 1; i >= 0; i--) {
       const f = food[i];
       if (f.hp <= 0) continue;
       const distToFood = Math.hypot(p.x - f.x, p.y - f.y);
-                  const hitDist = (p.level >= 6)
-        ? p.r + f.r * 0.9
-        : p.r * 1.0 + f.r * 1.0;
+      const hitDist = (p.level >= 6) ? p.r + f.r * 0.9 : p.r * 1.0 + f.r * 1.0;
 
       if (distToFood < hitDist) {
         if (p.level < f.minLevel) continue;
@@ -893,9 +927,7 @@ setInterval(() => {
       const m = meat[i];
       if (m.hp <= 0) continue;
       const distToMeat = Math.hypot(p.x - m.x, p.y - m.y);
-      const hitDist = (p.level >= 6)
-  ? p.r + m.r * 0.9
-  : p.r * 1.0 + m.r * 1.0;
+      const hitDist = (p.level >= 6) ? p.r + m.r * 0.9 : p.r * 1.0 + m.r * 1.0;
 
       if (distToMeat < hitDist) {
         const now = Date.now();
@@ -941,9 +973,10 @@ setInterval(() => {
     if (!players[id]) continue;
     const p = players[id];
     if (p.hidden || p.dead) continue;
+    if (p.holeState !== 'outside') continue;
     for (const c of crystals) {
       if (c.hp <= 0) continue;
-            if (Math.hypot(p.x - c.x, p.y - c.y) < p.r + c.r * 0.95) {
+      if (Math.hypot(p.x - c.x, p.y - c.y) < p.r + c.r * 0.95) {
         const now = Date.now();
         if (!p.lastCrystalBite || now - p.lastCrystalBite >= 500) {
           p.lastCrystalBite = now;
@@ -958,7 +991,6 @@ setInterval(() => {
             p.score += 5;
           }
 
-          // ✨ Аура исцеления
           if (c.isMega) {
             p.auraColor = 'orange';
             p.auraUntil = now + 2000;
@@ -1013,6 +1045,7 @@ setInterval(() => {
       const p1 = players[ids[a]];
       const p2 = players[ids[b]];
       if (!p1 || !p2 || p1.hidden || p2.hidden || p1.dead || p2.dead) continue;
+      if (p1.holeState !== 'outside' || p2.holeState !== 'outside') continue;
       if (p1.isSanta || p2.isSanta) continue;
       const dist = Math.hypot(p1.x - p2.x, p1.y - p2.y);
       const bigger = p1.r > p2.r ? p1 : p2;
@@ -1044,6 +1077,7 @@ setInterval(() => {
     for (const id in players) {
       const p = players[id];
       if (!p || p.id === fb.owner || p.hidden || p.isSanta || p.dead) continue;
+      if (p.holeState !== 'outside') continue;
       if (Math.hypot(p.x - fb.x, p.y - fb.y) < p.r + fb.r) {
         p.hp -= fb.damage;
         const ang = Math.atan2(p.y - fb.y, p.x - fb.x);
@@ -1083,5 +1117,5 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log(`Сервер запущен: http://localhost:${PORT}`);
   console.log(`👑 Админ-пароль: ${ADMIN_PASSWORD}`);
   console.log(`🗺 Карта: ${WORLD.width}x${WORLD.height}`);
-  console.log(`💎 Кристаллы: толкаемые (тяжёлые)`);
+  console.log(`🕳 Механика норы: плавный вход/выход (вариант A)`);
 });
