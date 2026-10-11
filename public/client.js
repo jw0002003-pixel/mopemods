@@ -63,6 +63,11 @@ ws.onmessage = (event) => {
     players = data.players;
     fireballs = data.fireballs || [];
 
+    // 👑 Обновляем isAdmin из сервера (после /admin)
+    if (myId && players[myId]) {
+      isAdmin = players[myId].isAdmin || false;
+    }
+
     if (myId && players[myId]) {
       const me = players[myId];
       bottomBar.style.display = 'block';
@@ -361,15 +366,12 @@ function draw() {
   for (const tr of trees) {
     const tx = tr.x - camera.x;
     const ty = tr.y - camera.y;
-    // тень
     ctx.fillStyle = 'rgba(0,0,0,0.3)';
     ctx.beginPath();
     ctx.ellipse(tx, ty + tr.r * 0.7, tr.r * 0.9, tr.r * 0.3, 0, 0, Math.PI * 2);
     ctx.fill();
-    // ствол
     ctx.fillStyle = '#4a2c17';
     ctx.fillRect(tx - 6, ty - 4, 12, tr.r * 0.8);
-    // крона
     ctx.beginPath();
     ctx.arc(tx, ty, tr.r, 0, Math.PI * 2);
     ctx.fillStyle = '#1e4d1a';
