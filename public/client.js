@@ -158,8 +158,12 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'g' || e.key === 'G' || e.key === 'п') {
     if (myId && players[myId] && players[myId].isSanta) ws.send(JSON.stringify({ type: 'santa_gift' }));
   }
-  if (e.key === 'q' || e.key === 'Q' || e.key === 'й') {
-    if (myId && players[myId] && gameStarted) ws.send(JSON.stringify({ type: 'ability' }));
+  if (e.key === 'w' || e.key === 'W' || e.key === 'ц') {
+    if (myId && players[myId] && gameStarted) {
+      const me = players[myId];
+      if (me.level >= 6 || me.isSanta) return;
+      ws.send(JSON.stringify({ type: 'dive' }));
+    }
   }
   if (e.key === 'e' || e.key === 'E' || e.key === 'у') {
     if (myId && players[myId] && players[myId].level === 7) ws.send(JSON.stringify({ type: 'tail' }));
