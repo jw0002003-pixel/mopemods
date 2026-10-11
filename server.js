@@ -653,8 +653,9 @@ setInterval(() => {
           if (distFromCenter < hole.r * 0.85) {
             p.x = newX;
             p.y = newY;
-          } else {
+                    } else {
             p.holeState = 'exiting';
+            p.skipInterpolation = true;
           }
         }
       }
@@ -694,6 +695,8 @@ setInterval(() => {
           p.holeCooldown = Date.now() + 800;
           p.vx = nx * 3;
           p.vy = ny * 3;
+          // 🚫 Сброс интерполяции для устранения фриза
+          p.skipInterpolation = true;
         }
       } else {
         p.holeState = 'outside';
