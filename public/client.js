@@ -58,16 +58,18 @@ ws.onmessage = (event) => {
       const me = players[myId];
       bottomBar.style.display = 'block';
 
-      if (me.dead) {
-        barLabel.textContent = '💀 Ты погиб! Нажми «ИГРАТЬ»';
-        xpFill.style.width = '0%';
-        waterFill.style.width = '0%';
-        const menu = document.getElementById('menu');
-        if (menu.style.display === 'none' || !menu.style.display) {
-          menu.style.display = 'flex';
-          gameStarted = false;
-          document.getElementById('startBtn').textContent = '▶ ИГРАТЬ';
-        }
+if (me.dead) {
+  barLabel.textContent = '💀 Ты погиб! Нажми «ИГРАТЬ»';
+  xpFill.style.width = '0%';
+  waterFill.style.width = '0%';
+  const menu = document.getElementById('menu');
+  if (menu.style.display === 'none' || !menu.style.display) {
+    menu.style.display = 'flex';
+    gameStarted = false;
+    document.getElementById('startBtn').textContent = '▶ ИГРАТЬ';
+    hideMobileControls();  // ← добавили
+  }
+}
       } else {
         const xpToNext = [10, 25, 50, 100, 200, 400, Infinity][Math.min(me.level - 1, 6)];
         const prevXP = me.level > 1 ? [0, 10, 25, 50, 100, 200, 400][me.level - 1] : 0;
@@ -188,6 +190,7 @@ document.getElementById('startBtn').addEventListener('click', () => {
   document.getElementById('menu').style.display = 'none';
   gameStarted = true;
   bottomBar.style.display = 'block';
+  showMobileControls();  // ← добавили
 });
 
 document.addEventListener('keydown', (e) => {
@@ -614,9 +617,16 @@ else drawSkin(ctx, x, y, skinSize, p.level, p.renderAngle !== undefined ? p.rend
 // === МОБИЛЬНОЕ УПРАВЛЕНИЕ ===
 const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
 
-if (isMobile) {
-  document.getElementById('joystick').style.display = 'block';
-  document.getElementById('mobile-buttons').style.display = 'flex';
+// Джойстик показываем ТОЛЬКО после старта игры
+function showMobileControls() {
+  if (isMobile) {
+    document.getElementById('joystick').style.display = 'block';
+    document.getElementById('mobile-buttons').style.display = 'flex';
+  }
+}
+function hideMobileControls() {
+  document.getElementById('joystick').style.display = 'none';
+  document.getElementById('mobile-buttons').style.display = 'none';
 }
 
 const joystickEl = document.getElementById('joystick-base');
