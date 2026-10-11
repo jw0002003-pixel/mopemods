@@ -343,17 +343,18 @@ if (viewH < world.height) {
     ctx.fillText('⚔️ АРЕНА ⚔️', ax, ay - arena.r - 10);
   }
 
-  ctx.strokeStyle = 'rgba(0,0,0,0.15)';
-  ctx.lineWidth = 1;
-  const grid = 100;
-  const startX = Math.floor(camera.x / grid) * grid;
-  const startY = Math.floor(camera.y / grid) * grid;
-  for (let x = startX; x < camera.x + viewW + grid; x += grid) {
-    ctx.beginPath(); ctx.moveTo(x - camera.x, 0); ctx.lineTo(x - camera.x, viewH); ctx.stroke();
-  }
-  for (let y = startY; y < camera.y + viewH + grid; y += grid) {
-    ctx.beginPath(); ctx.moveTo(0, y - camera.y); ctx.lineTo(viewW, y - camera.y); ctx.stroke();
-  }
+// СЕТКА — УБРАНА
+// ctx.strokeStyle = 'rgba(0,0,0,0.15)';
+// ctx.lineWidth = 1;
+// const grid = 100;
+// const startX = Math.floor(camera.x / grid) * grid;
+// const startY = Math.floor(camera.y / grid) * grid;
+// for (let x = startX; x < camera.x + viewW + grid; x += grid) {
+//   ctx.beginPath(); ctx.moveTo(x - camera.x, 0); ctx.lineTo(x - camera.x, viewH); ctx.stroke();
+// }
+// for (let y = startY; y < camera.y + viewH + grid; y += grid) {
+//   ctx.beginPath(); ctx.moveTo(0, y - camera.y); ctx.lineTo(viewW, y - camera.y); ctx.stroke();
+// }
 
   ctx.strokeStyle = '#fff'; ctx.lineWidth = 4;
   ctx.strokeRect(-camera.x, -camera.y, world.width, world.height);
