@@ -266,7 +266,6 @@ wss.on('connection', (ws) => {
         }
         const dist = Math.hypot(dx, dy);
         if (dist > 0.01) {
-          // 🐢 Dash в 20 раз слабее: было 35 → стало 1.75
           const power = 1.75;
           p.dashVx = (dx / dist) * power;
           p.dashVy = (dy / dist) * power;
@@ -376,9 +375,45 @@ wss.on('connection', (ws) => {
           ws.send(JSON.stringify({ type: 'chat', system: true, text: `❌ Убей 3 драконов (у тебя ${p.dragonsKilled}/3)` }));
         }
       }
+
+      // 👑 АДМИН: смена уровня стрелками вверх/вниз
+      if (data.type === 'admin_level' && players[id]) {
+        const p = players[id];
+        if (!p.isAdmin) {
+          ws.send(JSON.stringify({ type: 'chat', system: true, text: '❌ Только админ' }));
+          return;
+        }
+        if (p.dead || p.hidden || p.isSanta) return;
+
+        const delta = parseInt(data.delta) || 0;
+        if (delta === 0) return;
+
+        const currentLvl = p.level || 1;
+        let newLvl = currentLvl + delta;
+
+        if (newLvl < 1) newLvl = 1;
+        if (newLvl > 6) newLvl = 6;
+
+        if (newLvl === currentLvl) return;
+
+        p.level = newLvl;
+        const a = ANIMALS[newLvl - 1];
+        p.r = a.r;
+        p.color = a.color;
+        p.hp = a.hp;
+        p.maxHp = a.hp;
+        p.damage = a.damage;
+        p.score = [10, 25, 50, 100, 200, 400][newLvl - 1] || 0;
+
+        broadcast({
+          type: 'chat',
+          system: true,
+          text: `👑 ${p.name} переключился: ${a.name} (${newLvl} ур.)`
+        });
+      }
+
       if (data.type === 'spawn' && players[id]) {
         const p = players[id];
-        // 🎲 Спавн в случайном биоме (кроме вулкана, воды и реки)
         let x, y, biome, tries = 0;
         do {
           x = 200 + Math.random() * (WORLD.width - 400);
@@ -436,7 +471,7 @@ wss.on('connection', (ws) => {
 
         if (text === '/admin ' + ADMIN_PASSWORD) {
           p.isAdmin = true;
-          ws.send(JSON.stringify({ type: 'chat', system: true, text: '👑 Ты теперь админ! /santa — стать Дедом Морозом.' }));
+          ws.send(JSON.stringify({ type: 'chat', system: true, text: '👑 Ты теперь админ! Стрелки ↑ ↓ — смена уровня.' }));
           return;
         }
         if (text === '/santa') {
@@ -464,7 +499,7 @@ wss.on('connection', (ws) => {
             ws.send(JSON.stringify({ type: 'chat', system: true, text: '❌ Нет прав' }));
             return;
           }
-          if (cmd === '/help') ws.send(JSON.stringify({ type: 'chat', system: true, text: '👑 /kill /tp X Y /size N /level N /score N /clear /santa /santaspeed N' }));
+          if (cmd === '/help') ws.send(JSON.stringify({ type: 'chat', system: true, text: '👑 /kill /tp X Y /size N /level N /score N /clear /santa /santaspeed N | Стрелки ↑↓ — уровень' }));
           else if (cmd === '/kill') { delete players[id]; }
           else if (cmd === '/tp' && parts.length === 3) { p.x = parseFloat(parts[1]) || 0; p.y = parseFloat(parts[2]) || 0; }
           else if (cmd === '/size' && parts.length === 2) p.r = Math.max(5, Math.min(200, parseFloat(parts[1]) || 15));
@@ -579,23 +614,18 @@ setInterval(() => {
       const animal = getAnimalByLevel(p.level);
       maxSpeed = animal.speed * 0.9;
       if (p.boostActive) maxSpeed *= 1.8;
-      // 🌊 Замедление в воде и реке
       if (currentBiome.name === 'water') maxSpeed *= 0.6;
       if (currentBiome.name === 'river') maxSpeed *= 0.8;
-      // ❄️ Замедление в снегу
       if (currentBiome.name === 'snow') maxSpeed *= 0.8;
     }
 
-    // 🌊 ТЕЧЕНИЕ РЕКИ
     let riverBonusX = 0, riverBonusY = 0;
     if (currentBiome.name === 'river') {
       const flowLen = Math.hypot(RIVER_FLOW.x, RIVER_FLOW.y);
       const flowNx = RIVER_FLOW.x / flowLen;
       const flowNy = RIVER_FLOW.y / flowLen;
-      // Проекция скорости игрока на направление течения
       const vProj = (p.vx * flowNx + p.vy * flowNy);
-      const flowStrength = 2.5; // сила течения
-      // Если плывёт по течению — ускоряем, против — тормозим
+      const flowStrength = 2.5;
       riverBonusX = flowNx * flowStrength * (vProj >= 0 ? 1 : -0.5);
       riverBonusY = flowNy * flowStrength * (vProj >= 0 ? 1 : -0.5);
     }
@@ -624,7 +654,6 @@ setInterval(() => {
       }
     }
 
-    // Добавляем бонус от течения реки
     p.vx += riverBonusX;
     p.vy += riverBonusY;
 
@@ -646,7 +675,6 @@ setInterval(() => {
     p.x = Math.max(wallOffset, Math.min(WORLD.width - wallOffset, p.x));
     p.y = Math.max(wallOffset, Math.min(WORLD.height - wallOffset, p.y));
 
-    // 🍓 Столкновение только когда еда стоит
     if (!p.hidden && !p.dead) {
       for (const f of food) {
         if (f.hp <= 0) continue;
@@ -679,7 +707,6 @@ setInterval(() => {
     }
   }
 
-  // 🍓 ФИЗИКА ЕДЫ И МЯСА — мягкое трение
   for (const f of food) {
     if (f.hp <= 0) continue;
     if (f.vx === undefined) { f.vx = 0; f.vy = 0; }
@@ -718,13 +745,11 @@ setInterval(() => {
     }
   }
 
-  // Удаление временных нор
   for (let i = holes.length - 1; i >= 0; i--) {
     if (holes[i].temp && Date.now() > holes[i].expiresAt) {
       holes.splice(i, 1);
     }
   }
-  // АВТОЗАХОД В НОРКУ
   for (const id in players) {
     if (!players[id]) continue;
     const p = players[id];
@@ -789,7 +814,6 @@ setInterval(() => {
     const p = players[id];
     if (p.hidden || p.isSanta || p.dead) continue;
 
-    // 🍓 ЕДА
     for (let i = food.length - 1; i >= 0; i--) {
       const f = food[i];
       if (f.hp <= 0) continue;
@@ -846,7 +870,6 @@ setInterval(() => {
       }
     }
 
-    // 🍖 МЯСО
     for (let i = meat.length - 1; i >= 0; i--) {
       const m = meat[i];
       if (m.hp <= 0) continue;
@@ -898,7 +921,6 @@ setInterval(() => {
       }
     }
 
-    // 🎁 ПОДАРКИ
     for (let i = presents.length - 1; i >= 0; i--) {
       const pr = presents[i];
       if (Math.hypot(p.x - pr.x, p.y - pr.y) < p.r + pr.r) {
@@ -910,7 +932,6 @@ setInterval(() => {
     }
   }
 
-  // 💎 КРИСТАЛЛЫ
   for (const id in players) {
     if (!players[id]) continue;
     const p = players[id];
@@ -1045,4 +1066,5 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log(`👑 Админ-пароль: ${ADMIN_PASSWORD}`);
   console.log(`🗺 Карта: ${WORLD.width}x${WORLD.height}`);
   console.log(`🌋 Вулкан: центр (${VOLCANO.x}, ${VOLCANO.y}), радиус ${VOLCANO.r}`);
+  console.log(`🎮 Стрелки ↑ ↓ — смена уровня (для админа)`);
 });
