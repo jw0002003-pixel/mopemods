@@ -572,7 +572,12 @@ setInterval(() => {
       p.angle += turnAmount;
     }
   }
-
+  // Удаление временных нор
+  for (let i = holes.length - 1; i >= 0; i--) {
+    if (holes[i].temp && Date.now() > holes[i].expiresAt) {
+      holes.splice(i, 1);
+    }
+  }
   // АВТОЗАХОД В НОРКУ
   for (const id in players) {
     if (!players[id]) continue;
