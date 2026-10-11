@@ -18,6 +18,9 @@ window.addEventListener('resize', () => {
 
 function lerp(a, b, t) { return a + (b - a) * t; }
 
+// === ОПРЕДЕЛЯЕМ МОБИЛЬНОЕ УСТРОЙСТВО СРАЗУ ===
+const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+
 let myId = null;
 let world = { width: 4000, height: 4000 };
 let players = {};
@@ -155,10 +158,10 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
-setInterval(() => {
+// === УПРАВЛЕНИЕ МЫШЬЮ (только ПК) ===
 setInterval(() => {
   if (!gameStarted || !myId || !players[myId]) return;
-  if (isMobile) return; // ← на мобильном — только джойстик
+  if (isMobile) return; // на мобильном — только джойстик
   const me = players[myId];
   if (me.dead) return;
   const cx = canvas.width / 2, cy = canvas.height / 2;
@@ -273,7 +276,8 @@ function draw() {
     if (me.isSanta) fovLevel = 1500;
     else fovLevel = FOV_RADIUS[Math.min((me.level || 1) - 1, 6)] || 500;
   }
-  camera.zoom = 700 / fovLevel;
+  // На мобильном — обзор шире
+  camera.zoom = (isMobile ? 450 : 700) / fovLevel;
   if (camera.zoom < 0.25) camera.zoom = 0.25;
   if (camera.zoom > 2.5) camera.zoom = 2.5;
 
@@ -616,8 +620,6 @@ function draw() {
 }
 
 // === МОБИЛЬНОЕ УПРАВЛЕНИЕ ===
-const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
-
 function showMobileControls() {
   if (isMobile) {
     document.getElementById('joystick').style.display = 'block';
