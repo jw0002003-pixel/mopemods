@@ -275,11 +275,12 @@ function draw() {
     if (!p || p.dead) continue;
 
     // 🚫 Сброс интерполяции — если сервер пометил skipInterpolation
-    if (p.skipInterpolation) {
+    if (p.skipInterpolation || p.skipInterpolationFrames > 0) {
       p.renderX = p.x;
       p.renderY = p.y;
       p.renderAngle = p.angle || 0;
       p.skipInterpolation = false;
+      if (p.skipInterpolationFrames > 0) p.skipInterpolationFrames--;
       continue;
     }
 
