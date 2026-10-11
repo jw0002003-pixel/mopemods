@@ -19,7 +19,7 @@ window.addEventListener('resize', () => {
 function lerp(a, b, t) { return a + (b - a) * t; }
 
 // === ОПРЕДЕЛЯЕМ МОБИЛЬНОЕ УСТРОЙСТВО СРАЗУ ===
-const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+const isMobile = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0) || /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
 
 let myId = null;
 let world = { width: 4000, height: 4000 };
@@ -33,7 +33,7 @@ let crystals = [];
 let meat = [];
 let volcano = { x: 2000, y: 2000, r: 600 };
 let arena = { x: 2000, y: 2000, r: 400, active: false };
-let mouse = { x: 0, y: 0 };
+let mouse = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
 let camera = { x: 0, y: 0, zoom: 1 };
 let gameStarted = false;
 let isAdmin = false;
@@ -283,8 +283,19 @@ function draw() {
 
   const viewW = canvas.width / camera.zoom;
   const viewH = canvas.height / camera.zoom;
-  camera.x = focusX - viewW / 2;
-  camera.y = focusY - viewH / 2;
+camera.x = focusX - viewW / 2;
+camera.y = focusY - viewH / 2;
+// Ограничить камеру — не показывать за картой
+if (viewW < world.width) {
+  camera.x = Math.max(0, Math.min(world.width - viewW, camera.x));
+} else {
+  camera.x = (world.width - viewW) / 2;
+}
+if (viewH < world.height) {
+  camera.y = Math.max(0, Math.min(world.height - viewH, camera.y));
+} else {
+  camera.y = (world.height - viewH) / 2;
+}
 
   ctx.save();
   ctx.scale(camera.zoom, camera.zoom);
