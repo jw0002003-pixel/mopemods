@@ -525,25 +525,57 @@ if (p.level === 5 && swingElapsed < 80) {
     if (p.isSanta) drawSkin(ctx, x, y, skinSize, 'santa', p.renderAngle !== undefined ? p.renderAngle : p.angle);
     else drawSkin(ctx, x, y, skinSize, p.level, p.renderAngle !== undefined ? p.renderAngle : p.angle);
 
-// Анимация удара лапой (для медведя) — МГНОВЕННАЯ ВСПЫШКА
-const swingElapsed = Date.now() - (p.swingTime || 0);
-if (p.level === 5 && swingElapsed < 80) {
+// 🐾 Анимация удара лапой медведя
+if (p.level === 5 && p.swingActive) {
   const PR = Math.max(0.1, Math.abs(p.r || 1));
   const angle = p.renderAngle !== undefined ? p.renderAngle : (p.angle || 0);
 
-  // Сторона: left или right (с сервера)
+  // Длительность анимации (мс) — должна совпадать с setTimeout в abilities.js
+  const DURATION = 150;
+  const elapsed = Date.now() - (p.swingTime || 0);
+  const t = Math.max(0, Math.min(1, elapsed / DURATION)); // 0 → 1
+
+  // Сторона: left или right
   const side = p.nextPawSide || 'left';
-  const pawAngle = side === 'left' ? (angle - Math.PI / 3) : (angle + Math.PI / 3);
-  const reach = PR * 1.4;
+  const sideMul = side === 'left' ? -1 : 1;
+
+  // Угол лапы — с «разлётом» вперёд
+  const pawAngle = angle + sideMul * (Math.PI / 3.2);
+
+  // Дистанция вылета: 0.9r → 1.6r (удар «выбрасывает» лапу)
+  const reach = PR * (0.9 + t * 0.7);
+
+  // Затухание в конце
+  const alpha = t < 0.7 ? 1 : 1 - (t - 0.7) / 0.3;
 
   const pawX = x + Math.cos(pawAngle) * reach;
   const pawY = y + Math.sin(pawAngle) * reach;
 
   ctx.save();
+  ctx.globalAlpha = alpha;
+
+  // 💥 Вспышка-ударная волна при появлении
+  if (t < 0.5) {
+    const waveProgress = t / 0.5;
+    const waveR = PR * (0.6 + waveProgress * 1.2);
+    ctx.beginPath();
+    ctx.arc(pawX, pawY, waveR, 0, Math.PI * 2);
+    ctx.strokeStyle = `rgba(255, 220, 100, ${1 - waveProgress})`;
+    ctx.lineWidth = 5 * (1 - waveProgress);
+    ctx.stroke();
+  }
+
+  // 🐾 Сама лапа
   ctx.translate(pawX, pawY);
   ctx.rotate(pawAngle);
 
-  // Круг лапы — на полной яркости
+  // Тень лапы
+  ctx.beginPath();
+  ctx.arc(3, 3, PR * 0.6, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(0,0,0,0.35)';
+  ctx.fill();
+
+  // Основной круг лапы
   ctx.beginPath();
   ctx.arc(0, 0, PR * 0.6, 0, Math.PI * 2);
   ctx.fillStyle = '#6f4e37';
@@ -555,10 +587,14 @@ if (p.level === 5 && swingElapsed < 80) {
   // Когти
   for (let c = -1; c <= 1; c++) {
     ctx.beginPath();
-    ctx.arc(PR * 0.4, c * PR * 0.3, PR * 0.12, 0, Math.PI * 2);
+    ctx.arc(PR * 0.42, c * PR * 0.3, PR * 0.13, 0, Math.PI * 2);
     ctx.fillStyle = '#fff';
     ctx.fill();
+    ctx.strokeStyle = '#3d2a1a';
+    ctx.lineWidth = 2;
+    ctx.stroke();
   }
+
   ctx.restore();
 }
 
