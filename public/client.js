@@ -477,26 +477,25 @@ camera.y = focusY - viewH / 2;
     if (p.isSanta) drawSkin(ctx, x, y, skinSize, 'santa', p.renderAngle !== undefined ? p.renderAngle : p.angle);
     else drawSkin(ctx, x, y, skinSize, p.level, p.renderAngle !== undefined ? p.renderAngle : p.angle);
 
-// Анимация удара лапой (для медведя) — ДВЕ ЛАПЫ ПО БОКАМ
+// Анимация удара лапой (для медведя) — ДВЕ ЛАПЫ У НОСА, ПЛАВНОЕ ПОЯВЛЕНИЕ
 const swingElapsed = Date.now() - (p.swingTime || 0);
 if (p.level === 5 && swingElapsed < 300) {
   const PR = Math.max(0.1, Math.abs(p.r || 1));
 
   const swingDuration = 300;
   const t = Math.min(1, swingElapsed / swingDuration);
-  const progress = t < 0.5 ? t * 2 : (1 - t) * 2;
+  // Прогресс прозрачности: 0 → 1 → 0
+  const fade = t < 0.5 ? t * 2 : (1 - t) * 2;
 
-  // Угол носа (куда смотрит медведь)
   const angle = p.renderAngle !== undefined ? p.renderAngle : (p.angle || 0);
 
-  // Углы для двух лап: -60° и +60° от носа
+  // Лапы у носа (фиксированное расстояние, не зависит от progress)
   const leftAngle = angle - Math.PI / 3;
   const rightAngle = angle + Math.PI / 3;
+  const reach = PR * 1.4;
 
-  // Расстояние от центра до лапы
-  const reach = PR * 0.8 + progress * PR * 1.5;
+  ctx.globalAlpha = fade;  // плавное появление/исчезновение
 
-  // Рисуем ДВЕ лапы
   for (const pawAngle of [leftAngle, rightAngle]) {
     const pawX = x + Math.cos(pawAngle) * reach;
     const pawY = y + Math.sin(pawAngle) * reach;
@@ -521,6 +520,16 @@ if (p.level === 5 && swingElapsed < 300) {
     }
     ctx.restore();
   }
+
+  // След удара (полукруг спереди)
+  ctx.beginPath();
+  ctx.arc(x, y, Math.max(0.1, reach + PR * 0.4), angle - Math.PI / 2, angle + Math.PI / 2);
+  ctx.strokeStyle = `rgba(255, 200, 100, ${fade * 0.5})`;
+  ctx.lineWidth = 6;
+  ctx.stroke();
+
+  ctx.globalAlpha = 1;  // сброс прозрачности
+}
 
   // След удара (полукруг спереди)
   ctx.beginPath();
