@@ -285,12 +285,6 @@ function draw() {
   const viewH = canvas.height / camera.zoom;
  camera.x = focusX - viewW / 2;
 camera.y = focusY - viewH / 2;
-  if (viewH < world.height) {
-    camera.y = Math.max(0, Math.min(world.height - viewH, camera.y));
-  } else {
-    camera.y = (world.height - viewH) / 2;
-  }
-
   ctx.save();
   ctx.scale(camera.zoom, camera.zoom);
 
