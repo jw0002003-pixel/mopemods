@@ -39,7 +39,7 @@ function getBiomeAt(x, y) {
   return BIOMES[0];
 }
 
-// 🍓 Мягкое расталкивание игрока и еды
+// 🍓 Мягкое расталкивание игрока и еды (когда еда стоит)
 function resolveFoodCollision(p, f) {
   if (p.level >= 6) return false;
 
@@ -128,8 +128,7 @@ function spawnFood() {
     x, y, r: type.r, color: type.color, type: type.name,
     emoji: type.emoji, xp: type.xp, minLevel: type.minLevel, biome: type.biome,
     hp: type.bites, maxHp: type.bites, bites: type.bites,
-    vx: 0, vy: 0,
-    pushPower: 0, pushFromX: 0, pushFromY: 0
+    vx: 0, vy: 0
   };
 }
 for (let i = 0; i < FOOD_COUNT; i++) food.push(spawnFood());
@@ -519,8 +518,7 @@ setInterval(() => {
           hp: 2, maxHp: 2,
           color: ['#8B0000', '#A52A2A', '#B22222', '#DC143C'][Math.floor(Math.random() * 4)],
           emoji: '🍖',
-          vx: 0, vy: 0,
-          pushPower: 0, pushFromX: 0, pushFromY: 0
+          vx: 0, vy: 0
         });
       }
 
@@ -596,17 +594,16 @@ setInterval(() => {
     p.x = Math.max(wallOffset, Math.min(WORLD.width - wallOffset, p.x));
     p.y = Math.max(wallOffset, Math.min(WORLD.height - wallOffset, p.y));
 
-    // 🍓 Мягкое столкновение с едой (драконы — сквозь)
-    // Летящую еду не трогаем — она сама уедет
+    // 🍓 Столкновение только когда еда стоит (не летит)
     if (!p.hidden && !p.dead) {
       for (const f of food) {
         if (f.hp <= 0) continue;
-        if (Math.abs(f.vx) > 0.3 || Math.abs(f.vy) > 0.3) continue;
+        if (Math.abs(f.vx) > 0.15 || Math.abs(f.vy) > 0.15) continue;
         resolveFoodCollision(p, f);
       }
       for (const m of meat) {
         if (m.hp <= 0) continue;
-        if (Math.abs(m.vx) > 0.3 || Math.abs(m.vy) > 0.3) continue;
+        if (Math.abs(m.vx) > 0.15 || Math.abs(m.vy) > 0.15) continue;
         resolveFoodCollision(p, m);
       }
     }
@@ -630,32 +627,15 @@ setInterval(() => {
     }
   }
 
-  // 🍓 ФИЗИКА ЕДЫ И МЯСА — плавное выталкивание
+  // 🍓 ФИЗИКА ЕДЫ И МЯСА — мягкое трение
   for (const f of food) {
     if (f.hp <= 0) continue;
     if (f.vx === undefined) { f.vx = 0; f.vy = 0; }
-    if (f.pushPower === undefined) { f.pushPower = 0; f.pushFromX = 0; f.pushFromY = 0; }
 
-    // Если еда «отталкивается» — плавно накапливаем скорость
-    if (f.pushPower && f.pushPower > 0.01) {
-      const dx = f.x - f.pushFromX;
-      const dy = f.y - f.pushFromY;
-      const d = Math.hypot(dx, dy) || 1;
-      const nx = dx / d;
-      const ny = dy / d;
+    f.vx *= 0.94;
+    f.vy *= 0.94;
 
-      f.vx += nx * f.pushPower;
-      f.vy += ny * f.pushPower;
-
-      f.pushPower *= 0.90;
-      if (f.pushPower < 0.01) f.pushPower = 0;
-    }
-
-    // Трение — плавное затухание скорости
-    f.vx *= 0.97;
-    f.vy *= 0.97;
-
-    if (Math.abs(f.vx) > 0.01 || Math.abs(f.vy) > 0.01) {
+    if (Math.abs(f.vx) > 0.005 || Math.abs(f.vy) > 0.005) {
       f.x += f.vx;
       f.y += f.vy;
       const margin = f.r;
@@ -670,26 +650,11 @@ setInterval(() => {
   for (const m of meat) {
     if (m.hp <= 0) continue;
     if (m.vx === undefined) { m.vx = 0; m.vy = 0; }
-    if (m.pushPower === undefined) { m.pushPower = 0; m.pushFromX = 0; m.pushFromY = 0; }
 
-    if (m.pushPower && m.pushPower > 0.01) {
-      const dx = m.x - m.pushFromX;
-      const dy = m.y - m.pushFromY;
-      const d = Math.hypot(dx, dy) || 1;
-      const nx = dx / d;
-      const ny = dy / d;
+    m.vx *= 0.94;
+    m.vy *= 0.94;
 
-      m.vx += nx * m.pushPower;
-      m.vy += ny * m.pushPower;
-
-      m.pushPower *= 0.90;
-      if (m.pushPower < 0.01) m.pushPower = 0;
-    }
-
-    m.vx *= 0.97;
-    m.vy *= 0.97;
-
-    if (Math.abs(m.vx) > 0.01 || Math.abs(m.vy) > 0.01) {
+    if (Math.abs(m.vx) > 0.005 || Math.abs(m.vy) > 0.005) {
       m.x += m.vx;
       m.y += m.vy;
       const margin = m.r;
@@ -772,7 +737,7 @@ setInterval(() => {
     const p = players[id];
     if (p.hidden || p.isSanta || p.dead) continue;
 
-    // 🍓 ЕДА — укус, задаём pushPower (плавное выталкивание)
+    // 🍓 ЕДА — мягкое отталкивание
     for (let i = food.length - 1; i >= 0; i--) {
       const f = food[i];
       if (f.hp <= 0) continue;
@@ -798,19 +763,16 @@ setInterval(() => {
             f.hp -= 1;
           }
 
-          // 🐉 Сила толчка
-          const knockback = isDragon
-            ? 3.0 + p.r * 0.015
-            : 1.2 + p.r * 0.02;
-
-          // 🎯 Задаём силу выталкивания (накапливается покадрово)
-          f.pushFromX = p.x;
-          f.pushFromY = p.y;
-          f.pushPower = knockback;
-
+          // 🎯 Плавное отталкивание: маленький импульс
           const nx = (f.x - p.x) / (distToFood || 1);
           const ny = (f.y - p.y) / (distToFood || 1);
-          const recoil = isDragon ? 0.5 + p.r * 0.01 : 2 + p.r * 0.06;
+
+          const power = isDragon ? 1.2 : 0.5;
+
+          f.vx += nx * power;
+          f.vy += ny * power;
+
+          const recoil = isDragon ? 0.3 : 1.2;
           p.vx -= nx * recoil;
           p.vy -= ny * recoil;
 
@@ -834,7 +796,7 @@ setInterval(() => {
       }
     }
 
-    // 🍖 МЯСО — укус, задаём pushPower
+    // 🍖 МЯСО — мягкое отталкивание
     for (let i = meat.length - 1; i >= 0; i--) {
       const m = meat[i];
       if (m.hp <= 0) continue;
@@ -858,17 +820,15 @@ setInterval(() => {
             m.hp -= 1;
           }
 
-          const knockback = isDragon
-            ? 3.0 + p.r * 0.015
-            : 1.2 + p.r * 0.02;
-
-          m.pushFromX = p.x;
-          m.pushFromY = p.y;
-          m.pushPower = knockback;
-
           const nx = (m.x - p.x) / (distToMeat || 1);
           const ny = (m.y - p.y) / (distToMeat || 1);
-          const recoil = isDragon ? 0.5 + p.r * 0.01 : 2 + p.r * 0.06;
+
+          const power = isDragon ? 1.2 : 0.5;
+
+          m.vx += nx * power;
+          m.vy += ny * power;
+
+          const recoil = isDragon ? 0.3 : 1.2;
           p.vx -= nx * recoil;
           p.vy -= ny * recoil;
 
