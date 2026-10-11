@@ -681,39 +681,9 @@ setInterval(() => {
           p.hidden = false;
           p.inHole = null;
           p.holeCooldown = Date.now() + 800;
-          p.vx = nx * 3;
-          p.vy = ny * 3;
-        }
-      } else {
-        // Норы нет — выходим
-        p.holeState = 'outside';
-        p.hidden = false;
-        p.inHole = null;
-      }
-      continue;
+                p.vx = nx * 3;
+      p.vy = ny * 3;
     }
-      // Проверяем — вышли ли за границу норы
-      const hole = holes.find(h => h.id === p.inHole);
-      if (hole) {
-        const distFromCenter = Math.hypot(p.x - hole.x, p.y - hole.y);
-        if (distFromCenter >= hole.r * 0.85) {
-          // Выходим наружу — ставим за краем норы
-          p.x = hole.x + nx * (hole.r + p.r * 0.3);
-          p.y = hole.y + ny * (hole.r + p.r * 0.3);
-          p.holeState = 'outside';
-          p.hidden = false;
-          p.inHole = null;
-          p.holeCooldown = Date.now() + 800;
-          // Даём немного скорости в сторону движения
-          p.vx = nx * 3;
-          p.vy = ny * 3;
-        }
-      } else {
-        // Норы нет — выходим
-        p.holeState = 'outside';
-        p.hidden = false;
-        p.inHole = null;
-      }
       continue;
     }
 
