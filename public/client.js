@@ -544,7 +544,6 @@ function draw() {
 
   ctx.restore();
 
-  // HUD
   if (myId && players[myId] && !players[myId].dead && !spectating) {
     const p = players[myId];
     const animalNames = ['Мышка', 'Кролик', 'Лиса', 'Волк', 'Медведь', 'Дракон', 'Король Драконов'];
@@ -561,7 +560,6 @@ function draw() {
     hud.textContent = `Ур: ${p.isSanta ? '🎅' : p.level} (${animalName}) | HP: ${Math.max(0, Math.round(p.hp))}/${p.maxHp} | Q: ${abilityName} | ЛКМ: ${boostStatus} | F=Пить${adminTag}${quest}`;
   }
 
-  // SPECTATOR
   if (spectating && spectateTarget) {
     ctx.font = 'bold 20px sans-serif';
     ctx.textAlign = 'center';
@@ -610,4 +608,78 @@ function draw() {
 
   requestAnimationFrame(draw);
 }
+
+// === МОБИЛЬНОЕ УПРАВЛЕНИЕ ===
+const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+
+if (isMobile) {
+  document.getElementById('joystick').style.display = 'block';
+  document.getElementById('mobile-buttons').style.display = 'flex';
+}
+
+const joystickEl = document.getElementById('joystick-base');
+const stickEl = document.getElementById('joystick-stick');
+let joyActive = false;
+let joyDir = { x: 0, y: 0, power: 0 };
+
+function getJoyCenter() {
+  const r = joystickEl.getBoundingClientRect();
+  return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+}
+
+joystickEl.addEventListener('touchstart', (e) => {
+  e.preventDefault();
+  joyActive = true;
+  updateJoystick(e.touches[0]);
+}, { passive: false });
+
+joystickEl.addEventListener('touchmove', (e) => {
+  e.preventDefault();
+  if (!joyActive) return;
+  updateJoystick(e.touches[0]);
+}, { passive: false });
+
+joystickEl.addEventListener('touchend', (e) => {
+  e.preventDefault();
+  joyActive = false;
+  joyDir = { x: 0, y: 0, power: 0 };
+  stickEl.style.transform = 'translate(0, 0)';
+}, { passive: false });
+
+function updateJoystick(touch) {
+  const center = getJoyCenter();
+  let dx = touch.clientX - center.x;
+  let dy = touch.clientY - center.y;
+  const dist = Math.hypot(dx, dy);
+  const maxDist = 55;
+  const clamped = Math.min(dist, maxDist);
+  const nx = dist > 0 ? dx / dist : 0;
+  const ny = dist > 0 ? dy / dist : 0;
+  stickEl.style.transform = `translate(${nx * clamped}px, ${ny * clamped}px)`;
+  joyDir.x = nx;
+  joyDir.y = ny;
+  joyDir.power = clamped / maxDist;
+}
+
+setInterval(() => {
+  if (!isMobile || !gameStarted || !myId || !players[myId]) return;
+  if (joyDir.power < 0.05) return;
+  ws.send(JSON.stringify({ type: 'move', dirX: joyDir.x, dirY: joyDir.y, power: joyDir.power }));
+}, 1000 / 30);
+
+document.getElementById('btn-ability').addEventListener('touchstart', (e) => {
+  e.preventDefault();
+  if (myId && players[myId] && gameStarted) ws.send(JSON.stringify({ type: 'ability' }));
+}, { passive: false });
+
+document.getElementById('btn-boost').addEventListener('touchstart', (e) => {
+  e.preventDefault();
+  if (myId && players[myId] && gameStarted) ws.send(JSON.stringify({ type: 'boost' }));
+}, { passive: false });
+
+document.getElementById('btn-drink').addEventListener('touchstart', (e) => {
+  e.preventDefault();
+  if (myId && players[myId] && gameStarted) ws.send(JSON.stringify({ type: 'drink' }));
+}, { passive: false });
+
 draw();
