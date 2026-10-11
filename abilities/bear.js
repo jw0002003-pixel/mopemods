@@ -3,20 +3,19 @@ module.exports = {
   key: 'Q',
   cooldown: 500,
   use(player, players, world, helpers) {
+    const now = Date.now();
     player.swingActive = true;
-    player.swingTime = Date.now();
+    player.swingTime = now;
     player.swingAngle = player.angle || 0;
 
-    // Чередование стороны: left → right → left → right...
+    // Сторона чередуется
     player.nextPawSide = player.nextPawSide === 'left' ? 'right' : 'left';
+    const side = player.nextPawSide;
 
     setTimeout(() => {
-      if (players[player.id]) {
-        players[player.id].swingActive = false;
-      }
+      if (players[player.id]) players[player.id].swingActive = false;
     }, 80);
 
-    // Урон — только в полукруг спереди (радиус 150, угол ±60°)
     const hitRange = 150;
     const hitAngle = Math.PI / 3;
     let hitCount = 0;
@@ -24,6 +23,7 @@ module.exports = {
     for (const id in players) {
       const p = players[id];
       if (p.id === player.id || p.dead || p.hidden || p.isSanta) continue;
+
       const dx = p.x - player.x;
       const dy = p.y - player.y;
       const dist = Math.hypot(dx, dy);
@@ -34,19 +34,18 @@ module.exports = {
       while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
       while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
 
-      if (Math.abs(angleDiff) < hitAngle) {
+      // ✅ Урон только в сторону удара (учитываем сторону лапы)
+      const sideOffset = side === 'left' ? -0.5 : 0.5;
+      if (Math.abs(angleDiff - sideOffset) < hitAngle * 0.7 ||
+          Math.abs(angleDiff) < hitAngle) {
         p.hp -= 60;
-        p.stunned = Date.now() + 1500;
-        const ang = Math.atan2(dy, dx);
-        p.x += Math.cos(ang) * 150;
-        p.y += Math.sin(ang) * 150;
+        p.stunned = now + 1500;
+        p.x += Math.cos(angleToTarget) * 150;
+        p.y += Math.sin(angleToTarget) * 150;
         hitCount++;
       }
     }
 
-    if (hitCount > 0) {
-      return { ok: true, message: `🐻 Удар! Попало: ${hitCount}` };
-    }
-    return { ok: true, message: '🐻 Удар!' };
+    return { ok: true, message: hitCount > 0 ? `🐻 Удар! Попало: ${hitCount}` : '🐻 Удар!' };
   }
 };
