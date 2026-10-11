@@ -285,6 +285,18 @@ function draw() {
   const viewH = canvas.height / camera.zoom;
 camera.x = focusX - viewW / 2;
 camera.y = focusY - viewH / 2;
+
+// Не показывать за картой
+if (viewW < world.width) {
+  camera.x = Math.max(0, Math.min(world.width - viewW, camera.x));
+} else {
+  camera.x = (world.width - viewW) / 2;
+}
+if (viewH < world.height) {
+  camera.y = Math.max(0, Math.min(world.height - viewH, camera.y));
+} else {
+  camera.y = (world.height - viewH) / 2;
+}
 // Ограничить камеру — не показывать за картой
 if (viewW < world.width) {
   camera.x = Math.max(0, Math.min(world.width - viewW, camera.x));
