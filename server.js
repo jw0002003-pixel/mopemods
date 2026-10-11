@@ -698,6 +698,7 @@ setInterval(() => {
           p.vy = ny * 3;
           // 🚫 Сброс интерполяции для устранения фриза
           p.skipInterpolation = true;
+          p.skipInterpolationFrames = 3;   // ← ДОБАВИТЬ
         }
       } else {
         p.holeState = 'outside';
