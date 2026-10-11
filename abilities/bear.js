@@ -1,24 +1,51 @@
 module.exports = {
   name: 'Удар лапой',
   key: 'Q',
-  cooldown: 6000,
+  cooldown: 1500,
   use(player, players, world, helpers) {
-    // Найти ближайшего игрока
-    let nearest = null, minD = Infinity;
+    // Сообщить клиенту — проиграть анимацию
+    player.swingActive = true;
+    player.swingTime = Date.now();
+    player.swingAngle = player.angle || 0;
+    setTimeout(() => {
+      if (players[player.id]) {
+        players[player.id].swingActive = false;
+      }
+    }, 300);
+
+    // Урон — только в полукруг спереди (радиус 150, угол ±60°)
+    const hitRange = 150;
+    const hitAngle = Math.PI / 3; // 60°
+    let hitCount = 0;
+
     for (const id in players) {
       const p = players[id];
       if (p.id === player.id || p.dead || p.hidden || p.isSanta) continue;
-      const d = Math.hypot(p.x - player.x, p.y - player.y);
-      if (d < minD) { minD = d; nearest = p; }
+      const dx = p.x - player.x;
+      const dy = p.y - player.y;
+      const dist = Math.hypot(dx, dy);
+      if (dist > hitRange + p.r) continue;
+
+      // Угол между направлением удара и целью
+      const angleToTarget = Math.atan2(dy, dx);
+      let angleDiff = angleToTarget - player.angle;
+      while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+      while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
+
+      // Если цель в полукруге спереди
+      if (Math.abs(angleDiff) < hitAngle) {
+        p.hp -= 60;
+        p.stunned = Date.now() + 1500;
+        const ang = Math.atan2(dy, dx);
+        p.x += Math.cos(ang) * 150;
+        p.y += Math.sin(ang) * 150;
+        hitCount++;
+      }
     }
-    if (nearest && minD < 300) {
-      nearest.hp -= 60;
-      nearest.stunned = Date.now() + 1500;
-      const ang = Math.atan2(nearest.y - player.y, nearest.x - player.x);
-      nearest.x += Math.cos(ang) * 150;
-      nearest.y += Math.sin(ang) * 150;
-      return { ok: true, message: `🐻 Удар! ${nearest.name} получил 60 урона!` };
+
+    if (hitCount > 0) {
+      return { ok: true, message: `🐻 Удар! Попало: ${hitCount}` };
     }
-    return { ok: false, message: '❌ Никого рядом' };
+    return { ok: true, message: '🐻 Удар!' };  // всё равно бьёт
   }
 };
