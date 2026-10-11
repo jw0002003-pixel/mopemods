@@ -654,9 +654,10 @@ setInterval(() => {
           if (distFromCenter < hole.r * 0.85) {
             p.x = newX;
             p.y = newY;
-                    } else {
+          } else {
             p.holeState = 'exiting';
             p.skipInterpolation = true;
+            p.skipInterpolationFrames = 3;    // ← ДОБАВИТЬ
           }
         }
       }
