@@ -853,9 +853,9 @@ setInterval(() => {
       const f = food[i];
       if (f.hp <= 0) continue;
       const distToFood = Math.hypot(p.x - f.x, p.y - f.y);
-            const hitDist = (p.level >= 6)
+                  const hitDist = (p.level >= 6)
         ? p.r + f.r * 0.9
-        : p.r * 0.95 + f.r * 0.95;
+        : p.r * 1.0 + f.r * 1.0;
 
       if (distToFood < hitDist) {
         if (p.level < f.minLevel) continue;
@@ -893,7 +893,9 @@ setInterval(() => {
       const m = meat[i];
       if (m.hp <= 0) continue;
       const distToMeat = Math.hypot(p.x - m.x, p.y - m.y);
-      const hitDist = (p.level >= 6) ? p.r + m.r * 0.6 : p.r * 0.9 + m.r * 0.95;
+      const hitDist = (p.level >= 6)
+  ? p.r + m.r * 0.9
+  : p.r * 1.0 + m.r * 1.0;
 
       if (distToMeat < hitDist) {
         const now = Date.now();
