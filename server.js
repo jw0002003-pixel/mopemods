@@ -632,15 +632,23 @@ setInterval(() => {
     }
   }
 
-  // 🍓 ФИЗИКА ЕДЫ И МЯСА — плавное скольжение с затуханием
+   // 🍓 ФИЗИКА ЕДЫ И МЯСА — очень плавное скольжение
   for (const f of food) {
     if (f.hp <= 0) continue;
     if (f.vx === undefined) { f.vx = 0; f.vy = 0; }
-    if (Math.abs(f.vx) > 0.1 || Math.abs(f.vy) > 0.1) {
+
+    const speed = Math.hypot(f.vx, f.vy);
+
+    if (speed > 0.02) {
       f.x += f.vx;
       f.y += f.vy;
-      f.vx *= 0.95;
-      f.vy *= 0.95;
+
+      // 🐌 Очень плавное затухание — еда катится долго
+      // Чем медленнее еда — тем быстрее её догоняет затухание (мягкая остановка)
+      const friction = speed > 2 ? 0.985 : 0.94;
+      f.vx *= friction;
+      f.vy *= friction;
+
       const margin = f.r;
       f.x = Math.max(margin, Math.min(WORLD.width - margin, f.x));
       f.y = Math.max(margin, Math.min(WORLD.height - margin, f.y));
@@ -653,11 +661,17 @@ setInterval(() => {
   for (const m of meat) {
     if (m.hp <= 0) continue;
     if (m.vx === undefined) { m.vx = 0; m.vy = 0; }
-    if (Math.abs(m.vx) > 0.1 || Math.abs(m.vy) > 0.1) {
+
+    const speed = Math.hypot(m.vx, m.vy);
+
+    if (speed > 0.02) {
       m.x += m.vx;
       m.y += m.vy;
-      m.vx *= 0.95;
-      m.vy *= 0.95;
+
+      const friction = speed > 2 ? 0.985 : 0.94;
+      m.vx *= friction;
+      m.vy *= friction;
+
       const margin = m.r;
       m.x = Math.max(margin, Math.min(WORLD.width - margin, m.x));
       m.y = Math.max(margin, Math.min(WORLD.height - margin, m.y));
