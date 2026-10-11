@@ -156,7 +156,9 @@ document.addEventListener('keydown', (e) => {
 });
 
 setInterval(() => {
+setInterval(() => {
   if (!gameStarted || !myId || !players[myId]) return;
+  if (isMobile) return; // ← на мобильном — только джойстик
   const me = players[myId];
   if (me.dead) return;
   const cx = canvas.width / 2, cy = canvas.height / 2;
