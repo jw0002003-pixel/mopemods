@@ -59,7 +59,7 @@ const ANIMALS = [
   { name: 'Волк',            r: 38, speed: 15, color: '#8d99ae', xpToNext: 100, hp: 120, damage: 18, fov: 1300 },
   { name: 'Медведь',         r: 52, speed: 13, color: '#6f4e37', xpToNext: 200, hp: 180, damage: 25, fov: 1500 },
   { name: 'Дракон',          r: 300, speed: 10, color: '#9b2226', xpToNext: 400, hp: 250, damage: 35, fov: 2000 },
-  { name: 'Король Драконов', r: 650, speed: 10, color: '#ff4500', xpToNext: Infinity, hp: 500, damage: 50, fov: 3000 }
+  { name: 'Король Драконов', r: 500, speed: 10, color: '#ff4500', xpToNext: Infinity, hp: 500, damage: 50, fov: 3000 }
 ];
 
 function getAnimalByLevel(level) {
