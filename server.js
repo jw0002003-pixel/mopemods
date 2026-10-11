@@ -58,7 +58,7 @@ const ANIMALS = [
   { name: 'Лиса',            r: 28, speed: 15, color: '#e07a5f', xpToNext: 50,  hp: 80,  damage: 12, fov: 900 },
   { name: 'Волк',            r: 38, speed: 15, color: '#8d99ae', xpToNext: 100, hp: 120, damage: 18, fov: 1300 },
   { name: 'Медведь',         r: 52, speed: 13, color: '#6f4e37', xpToNext: 200, hp: 180, damage: 25, fov: 1500 },
-  { name: 'Дракон',          r: 300, speed: 10, color: '#9b2226', xpToNext: 200, hp: 250, damage: 35, fov: 2000 },
+  { name: 'Дракон',          r: 300, speed: 10, color: '#9b2226', xpToNext: 400, hp: 250, damage: 35, fov: 2000 },
   { name: 'Король Драконов', r: 500, speed: 10, color: '#ff4500', xpToNext: Infinity, hp: 500, damage: 50, fov: 3000 }
 ];
 
@@ -201,10 +201,8 @@ wss.on('connection', (ws) => {
           const dist = Math.hypot(dirX, dirY) || 1;
           p.x += (dirX / dist) * 120;
           p.y += (dirY / dist) * 120;
-         // Разрешить заходить за стену на 40% радиуса
-const wallOverlap = p.r * 0.4;
-p.x = Math.max(-wallOverlap, Math.min(WORLD.width + wallOverlap, p.x));
-p.y = Math.max(-wallOverlap, Math.min(WORLD.height + wallOverlap, p.y));
+          p.x = Math.max(p.r, Math.min(WORLD.width - p.r, p.x));
+          p.y = Math.max(p.r, Math.min(WORLD.height - p.r, p.y));
           p.holeCooldown = Date.now() + 1500;
           return;
         }
@@ -551,9 +549,10 @@ setInterval(() => {
       p.vy = (p.vy / v) * maxAllowed;
     }
 
-    p.x += p.vx; p.y += p.vy;
-    p.x = Math.max(p.r, Math.min(WORLD.width - p.r, p.x));
-    p.y = Math.max(p.r, Math.min(WORLD.height - p.r, p.y));
+p.x += p.vx; p.y += p.vy;
+const wallOverlap = p.r * 0.4;
+p.x = Math.max(-wallOverlap, Math.min(WORLD.width + wallOverlap, p.x));
+p.y = Math.max(-wallOverlap, Math.min(WORLD.height + wallOverlap, p.y));
 
     // Поворот
     let aimDx, aimDy;
