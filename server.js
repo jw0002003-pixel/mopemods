@@ -763,8 +763,8 @@ setInterval(() => {
     if (c.hp <= 0) continue;
     if (c.vx === undefined) { c.vx = 0; c.vy = 0; }
     // Тяжёлые — медленное затухание, но не бесконечное
-    c.vx *= 0.93;
-    c.vy *= 0.93;
+    c.vx *= 0.96;
+    c.vy *= 0.96;
     if (Math.abs(c.vx) > 0.01 || Math.abs(c.vy) > 0.01) {
       c.x += c.vx;
       c.y += c.vy;
@@ -939,7 +939,7 @@ setInterval(() => {
     if (p.hidden || p.dead) continue;
     for (const c of crystals) {
       if (c.hp <= 0) continue;
-      if (Math.hypot(p.x - c.x, p.y - c.y) < p.r + c.r * 0.5) {
+            if (Math.hypot(p.x - c.x, p.y - c.y) < p.r + c.r * 0.95) {
         const now = Date.now();
         if (!p.lastCrystalBite || now - p.lastCrystalBite >= 500) {
           p.lastCrystalBite = now;
