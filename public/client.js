@@ -519,53 +519,41 @@ if (p.level === 5 && swingElapsed < 80) {
     if (p.isSanta) drawSkin(ctx, x, y, skinSize, 'santa', p.renderAngle !== undefined ? p.renderAngle : p.angle);
     else drawSkin(ctx, x, y, skinSize, p.level, p.renderAngle !== undefined ? p.renderAngle : p.angle);
 
-// Анимация удара лапой (для медведя) — ДВЕ ЛАПЫ У НОСА, МГНОВЕННО
+// Анимация удара лапой (для медведя) — МГНОВЕННАЯ ВСПЫШКА
 const swingElapsed = Date.now() - (p.swingTime || 0);
-if (p.level === 5 && swingElapsed < 150) {
+if (p.level === 5 && swingElapsed < 80) {
   const PR = Math.max(0.1, Math.abs(p.r || 1));
   const angle = p.renderAngle !== undefined ? p.renderAngle : (p.angle || 0);
 
-  // Прогресс: 1 (сразу ярко) → 0 (за 150 мс)
-  const fade = 1 - swingElapsed / 150;
-
-  // Углы для двух лап — по бокам носа (-60° и +60°)
-  const leftAngle = angle - Math.PI / 3;
-  const rightAngle = angle + Math.PI / 3;
-
-  // Расстояние от центра до лапы
+  // Сторона: left или right (с сервера)
+  const side = p.nextPawSide || 'left';
+  const pawAngle = side === 'left' ? (angle - Math.PI / 3) : (angle + Math.PI / 3);
   const reach = PR * 1.4;
 
-  ctx.globalAlpha = fade;
+  const pawX = x + Math.cos(pawAngle) * reach;
+  const pawY = y + Math.sin(pawAngle) * reach;
 
-  // Рисуем ДВЕ лапы
-  for (const pawAngle of [leftAngle, rightAngle]) {
-    const pawX = x + Math.cos(pawAngle) * reach;
-    const pawY = y + Math.sin(pawAngle) * reach;
+  ctx.save();
+  ctx.translate(pawX, pawY);
+  ctx.rotate(pawAngle);
 
-    ctx.save();
-    ctx.translate(pawX, pawY);
-    ctx.rotate(pawAngle);
+  // Круг лапы — на полной яркости
+  ctx.beginPath();
+  ctx.arc(0, 0, PR * 0.6, 0, Math.PI * 2);
+  ctx.fillStyle = '#6f4e37';
+  ctx.fill();
+  ctx.strokeStyle = '#3d2a1a';
+  ctx.lineWidth = 4;
+  ctx.stroke();
 
-    // Круг лапы
+  // Когти
+  for (let c = -1; c <= 1; c++) {
     ctx.beginPath();
-    ctx.arc(0, 0, PR * 0.6, 0, Math.PI * 2);
-    ctx.fillStyle = '#6f4e37';
+    ctx.arc(PR * 0.4, c * PR * 0.3, PR * 0.12, 0, Math.PI * 2);
+    ctx.fillStyle = '#fff';
     ctx.fill();
-    ctx.strokeStyle = '#3d2a1a';
-    ctx.lineWidth = 4;
-    ctx.stroke();
-
-    // Когти
-    for (let c = -1; c <= 1; c++) {
-      ctx.beginPath();
-      ctx.arc(PR * 0.4, c * PR * 0.3, PR * 0.12, 0, Math.PI * 2);
-      ctx.fillStyle = '#fff';
-      ctx.fill();
-    }
-    ctx.restore();
   }
-
-  ctx.globalAlpha = 1;
+  ctx.restore();
 }
 
 
