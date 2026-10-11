@@ -160,7 +160,7 @@ wss.on('connection', (ws) => {
     lastFoodBite: 0, lastCrystalBite: 0,
     lastVolcanoDamage: 0, lastSantaGift: 0, lastWaterDrink: 0,
     inHole: false, hidden: false, burning: 0, dead: false, underwater: false,
-swingActive: false, swingTime: 0, swingAngle: 0, stunned: 0,
+swingActive: false, swingTime: 0, swingAngle: 0, stunned: 0, nextPawSide: 'left',
     spectating: false, inArena: false,
     previousScore: 0,
     holeCooldown: 0,
