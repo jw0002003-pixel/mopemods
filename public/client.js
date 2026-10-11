@@ -478,7 +478,8 @@ camera.y = focusY - viewH / 2;
     else drawSkin(ctx, x, y, skinSize, p.level, p.renderAngle !== undefined ? p.renderAngle : p.angle);
 
     // Анимация удара лапой (для медведя) — БЕЗОПАСНАЯ
-    if (p.swingActive && p.level === 5) {
+    const swingElapsed = Date.now() - (p.swingTime || 0);
+if (p.swingActive && p.level === 5 && swingElapsed < 400) {
       const PR = Math.max(0.1, Math.abs(p.r || 1));  // защита от NaN и минуса
 
       const swingDuration = 300;
