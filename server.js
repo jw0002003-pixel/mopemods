@@ -24,28 +24,19 @@ function isInVolcano(x, y) {
   return Math.hypot(x - VOLCANO.x, y - VOLCANO.y) < VOLCANO.r;
 }
 
-// === 🗺 БИОМЫ КАРТЫ 6000x6000 ===
 const BIOMES = [
-  // ВЕРХ (Y: 0 - 1800)
   { name: 'water',  x: 0,    y: 0,    w: 1500, h: 1800, color: '#1e3a5f' },
   { name: 'snow',   x: 1500, y: 0,    w: 3000, h: 1800, color: '#c8d8e8' },
   { name: 'water',  x: 4500, y: 0,    w: 1500, h: 1800, color: '#1e3a5f' },
-
-  // ЦЕНТР (Y: 1800 - 3600)
   { name: 'water',  x: 0,    y: 1800, w: 1000, h: 1800, color: '#1e3a5f' },
   { name: 'forest', x: 1000, y: 1800, w: 4000, h: 1800, color: '#2d5a27' },
   { name: 'water',  x: 5000, y: 1800, w: 1000, h: 1800, color: '#1e3a5f' },
-
-  // РЕКА (Y: 3600 - 4200)
   { name: 'river',  x: 0,    y: 3600, w: 6000, h: 600,  color: '#3b7fb0' },
-
-  // НИЗ (Y: 4200 - 6000)
   { name: 'water',  x: 0,    y: 4200, w: 1000, h: 1800, color: '#1e3a5f' },
   { name: 'desert', x: 1000, y: 4200, w: 4000, h: 1800, color: '#c2a56b' },
   { name: 'water',  x: 5000, y: 4200, w: 1000, h: 1800, color: '#1e3a5f' }
 ];
 
-// Направление течения реки: слева направо
 const RIVER_FLOW = { x: 1, y: 0 };
 
 function getBiomeAt(x, y) {
@@ -56,10 +47,9 @@ function getBiomeAt(x, y) {
   return BIOMES[0];
 }
 
-// 🍓 Мягкое расталкивание игрока и еды (когда еда стоит)
+// 🍓 Мягкое расталкивание игрока и еды
 function resolveFoodCollision(p, f) {
   if (p.level >= 6) return false;
-
   const dx = p.x - f.x;
   const dy = p.y - f.y;
   const dist = Math.hypot(dx, dy);
@@ -69,14 +59,46 @@ function resolveFoodCollision(p, f) {
     const overlap = minDist - dist;
     const nx = dx / dist;
     const ny = dy / dist;
-
     p.x += nx * overlap * 0.85;
     p.y += ny * overlap * 0.85;
+    const vn = p.vx * nx + p.vy * ny;
+    if (vn < 0) { p.vx -= vn * nx * 0.9; p.vy -= vn * ny * 0.9; }
+    return true;
+  }
+  return false;
+}
 
+// 💎 Расталкивание игрока и кристалла (тяжёлый, плавно толкается)
+function resolveCrystalCollision(p, c) {
+  if (c.hp <= 0) return false;
+  if (p.level >= 6) return false; // дракон проходит сквозь
+
+  const dx = p.x - c.x;
+  const dy = p.y - c.y;
+  const dist = Math.hypot(dx, dy);
+  // Кристалл тяжёлый — увеличиваем зону взаимодействия
+  const minDist = p.r * 0.85 + c.r * 0.85;
+
+  if (dist < minDist && dist > 0.001) {
+    const overlap = minDist - dist;
+    const nx = dx / dist;
+    const ny = dy / dist;
+
+    // Игрок выталкивается
+    p.x += nx * overlap * 0.6;
+    p.y += ny * overlap * 0.6;
+
+    // Кристалл получает маленький толчок (тяжёлый!)
+    // Чем ближе — тем сильнее, но всё равно медленно
+    const pushStrength = 0.08; // 🐌 медленно, тяжело
+    c.vx -= nx * overlap * pushStrength;
+    c.vy -= ny * overlap * pushStrength;
+
+    // Гасим скорость игрока в сторону кристалла
     const vn = p.vx * nx + p.vy * ny;
     if (vn < 0) {
-      p.vx -= vn * nx * 0.9;
-      p.vy -= vn * ny * 0.9;
+      p.vx -= vn * nx * 0.85;
+      p.vy -= vn * ny * 0.85;
     }
     return true;
   }
@@ -158,7 +180,8 @@ function spawnCrystal() {
   } while (isInVolcano(x, y));
   return {
     id: Math.random().toString(36).slice(2),
-    x, y, r: 60, hp: 50, maxHp: 50, respawnAt: 0, isMega: false
+    x, y, r: 60, hp: 50, maxHp: 50, respawnAt: 0, isMega: false,
+    vx: 0, vy: 0
   };
 }
 function spawnMegaCrystal() {
@@ -168,7 +191,8 @@ function spawnMegaCrystal() {
   const y = VOLCANO.y + Math.sin(a) * d;
   return {
     id: 'mega_' + Math.random().toString(36).slice(2),
-    x, y, r: 150, hp: 200, maxHp: 200, respawnAt: 0, isMega: true
+    x, y, r: 150, hp: 200, maxHp: 200, respawnAt: 0, isMega: true,
+    vx: 0, vy: 0
   };
 }
 for (let i = 0; i < CRYSTAL_COUNT; i++) crystals.push(spawnCrystal());
@@ -204,6 +228,7 @@ wss.on('connection', (ws) => {
     eatenLevels: [], dragonsKilled: 0,
     lastFire: 0, lastTail: 0, lastHit: 0,
     lastFoodBite: 0, lastCrystalBite: 0,
+    auraColor: null, auraUntil: 0,
     lastVolcanoDamage: 0, lastSantaGift: 0, lastWaterDrink: 0,
     inHole: false, hidden: false, burning: 0, dead: false, underwater: false,
     swingActive: false, swingTime: 0, swingAngle: 0, stunned: 0, nextPawSide: 'left',
@@ -314,10 +339,8 @@ wss.on('connection', (ws) => {
         const now = Date.now();
         if (now - (p.lastAbility || 0) < ability.cooldown) return;
         p.lastAbility = now;
-
         const helpers = { fireballs, holes, stunBalls: [] };
         const result = ability.use(p, players, WORLD, helpers);
-
         if (result && result.message) {
           ws.send(JSON.stringify({ type: 'chat', system: true, text: result.message }));
         }
@@ -376,7 +399,7 @@ wss.on('connection', (ws) => {
         }
       }
 
-      // 👑 АДМИН: смена уровня стрелками вверх/вниз
+      // 👑 АДМИН: смена уровня стрелками
       if (data.type === 'admin_level' && players[id]) {
         const p = players[id];
         if (!p.isAdmin) {
@@ -390,26 +413,17 @@ wss.on('connection', (ws) => {
 
         const currentLvl = p.level || 1;
         let newLvl = currentLvl + delta;
-
         if (newLvl < 1) newLvl = 1;
         if (newLvl > 6) newLvl = 6;
-
         if (newLvl === currentLvl) return;
 
         p.level = newLvl;
         const a = ANIMALS[newLvl - 1];
-        p.r = a.r;
-        p.color = a.color;
-        p.hp = a.hp;
-        p.maxHp = a.hp;
-        p.damage = a.damage;
+        p.r = a.r; p.color = a.color;
+        p.hp = a.hp; p.maxHp = a.hp; p.damage = a.damage;
         p.score = [10, 25, 50, 100, 200, 400][newLvl - 1] || 0;
 
-        broadcast({
-          type: 'chat',
-          system: true,
-          text: `👑 ${p.name} переключился: ${a.name} (${newLvl} ур.)`
-        });
+        broadcast({ type: 'chat', system: true, text: `👑 ${p.name} переключился: ${a.name} (${newLvl} ур.)` });
       }
 
       if (data.type === 'spawn' && players[id]) {
@@ -422,8 +436,7 @@ wss.on('connection', (ws) => {
           tries++;
         } while ((biome.name === 'volcano' || biome.name === 'water' || biome.name === 'river') && tries < 100);
 
-        p.x = x;
-        p.y = y;
+        p.x = x; p.y = y;
         p.level = 1;
         const animal = ANIMALS[0];
         p.r = animal.r; p.color = animal.color;
@@ -499,7 +512,7 @@ wss.on('connection', (ws) => {
             ws.send(JSON.stringify({ type: 'chat', system: true, text: '❌ Нет прав' }));
             return;
           }
-          if (cmd === '/help') ws.send(JSON.stringify({ type: 'chat', system: true, text: '👑 /kill /tp X Y /size N /level N /score N /clear /santa /santaspeed N | Стрелки ↑↓ — уровень' }));
+          if (cmd === '/help') ws.send(JSON.stringify({ type: 'chat', system: true, text: '👑 /kill /tp X Y /size N /level N /score N /clear /santa /santaspeed N | Стрелки ↑↓' }));
           else if (cmd === '/kill') { delete players[id]; }
           else if (cmd === '/tp' && parts.length === 3) { p.x = parseFloat(parts[1]) || 0; p.y = parseFloat(parts[2]) || 0; }
           else if (cmd === '/size' && parts.length === 2) p.r = Math.max(5, Math.min(200, parseFloat(parts[1]) || 15));
@@ -675,6 +688,7 @@ setInterval(() => {
     p.x = Math.max(wallOffset, Math.min(WORLD.width - wallOffset, p.x));
     p.y = Math.max(wallOffset, Math.min(WORLD.height - wallOffset, p.y));
 
+    // 🍓 Столкновение с едой
     if (!p.hidden && !p.dead) {
       for (const f of food) {
         if (f.hp <= 0) continue;
@@ -685,6 +699,11 @@ setInterval(() => {
         if (m.hp <= 0) continue;
         if (Math.abs(m.vx) > 0.15 || Math.abs(m.vy) > 0.15) continue;
         resolveFoodCollision(p, m);
+      }
+      // 💎 Столкновение с кристаллами
+      for (const c of crystals) {
+        if (c.hp <= 0) continue;
+        resolveCrystalCollision(p, c);
       }
     }
 
@@ -707,49 +726,57 @@ setInterval(() => {
     }
   }
 
+  // 🍓 ФИЗИКА ЕДЫ И МЯСА
   for (const f of food) {
     if (f.hp <= 0) continue;
     if (f.vx === undefined) { f.vx = 0; f.vy = 0; }
-
-    f.vx *= 0.94;
-    f.vy *= 0.94;
-
+    f.vx *= 0.94; f.vy *= 0.94;
     if (Math.abs(f.vx) > 0.005 || Math.abs(f.vy) > 0.005) {
-      f.x += f.vx;
-      f.y += f.vy;
+      f.x += f.vx; f.y += f.vy;
       const margin = f.r;
       f.x = Math.max(margin, Math.min(WORLD.width - margin, f.x));
       f.y = Math.max(margin, Math.min(WORLD.height - margin, f.y));
-    } else {
-      f.vx = 0;
-      f.vy = 0;
-    }
+    } else { f.vx = 0; f.vy = 0; }
   }
 
   for (const m of meat) {
     if (m.hp <= 0) continue;
     if (m.vx === undefined) { m.vx = 0; m.vy = 0; }
-
-    m.vx *= 0.94;
-    m.vy *= 0.94;
-
+    m.vx *= 0.94; m.vy *= 0.94;
     if (Math.abs(m.vx) > 0.005 || Math.abs(m.vy) > 0.005) {
-      m.x += m.vx;
-      m.y += m.vy;
+      m.x += m.vx; m.y += m.vy;
       const margin = m.r;
       m.x = Math.max(margin, Math.min(WORLD.width - margin, m.x));
       m.y = Math.max(margin, Math.min(WORLD.height - margin, m.y));
+    } else { m.vx = 0; m.vy = 0; }
+  }
+
+  // 💎 ФИЗИКА КРИСТАЛЛОВ (тяжёлые, медленно останавливаются)
+  for (const c of crystals) {
+    if (c.hp <= 0) continue;
+    if (c.vx === undefined) { c.vx = 0; c.vy = 0; }
+    // Тяжёлые — медленное затухание, но не бесконечное
+    c.vx *= 0.93;
+    c.vy *= 0.93;
+    if (Math.abs(c.vx) > 0.01 || Math.abs(c.vy) > 0.01) {
+      c.x += c.vx;
+      c.y += c.vy;
+      const margin = c.r;
+      c.x = Math.max(margin, Math.min(WORLD.width - margin, c.x));
+      c.y = Math.max(margin, Math.min(WORLD.height - margin, c.y));
     } else {
-      m.vx = 0;
-      m.vy = 0;
+      c.vx = 0;
+      c.vy = 0;
     }
   }
 
+  // Удаление временных нор
   for (let i = holes.length - 1; i >= 0; i--) {
     if (holes[i].temp && Date.now() > holes[i].expiresAt) {
       holes.splice(i, 1);
     }
   }
+  // АВТОЗАХОД В НОРКУ
   for (const id in players) {
     if (!players[id]) continue;
     const p = players[id];
@@ -814,50 +841,32 @@ setInterval(() => {
     const p = players[id];
     if (p.hidden || p.isSanta || p.dead) continue;
 
+    // 🍓 ЕДА
     for (let i = food.length - 1; i >= 0; i--) {
       const f = food[i];
       if (f.hp <= 0) continue;
-
       const distToFood = Math.hypot(p.x - f.x, p.y - f.y);
-
-      const hitDist = (p.level >= 6)
-        ? p.r + f.r * 0.6
-        : p.r * 0.9 + f.r * 0.7;
+      const hitDist = (p.level >= 6) ? p.r + f.r * 0.6 : p.r * 0.9 + f.r * 0.7;
 
       if (distToFood < hitDist) {
         if (p.level < f.minLevel) continue;
-
         const now = Date.now();
         if (!p.lastFoodBite || now - p.lastFoodBite >= 350) {
           p.lastFoodBite = now;
-
           const isDragon = p.level >= 6;
-
-          if (isDragon) {
-            f.hp = 0;
-          } else {
-            f.hp -= 1;
-          }
-
+          if (isDragon) f.hp = 0; else f.hp -= 1;
           const nx = (f.x - p.x) / (distToFood || 1);
           const ny = (f.y - p.y) / (distToFood || 1);
-
           const power = isDragon ? 1.2 : 0.5;
-          f.vx += nx * power;
-          f.vy += ny * power;
-
+          f.vx += nx * power; f.vy += ny * power;
           const recoil = isDragon ? 0.3 : 1.2;
-          p.vx -= nx * recoil;
-          p.vy -= ny * recoil;
-
+          p.vx -= nx * recoil; p.vy -= ny * recoil;
           p.score += f.xp || 1;
           p.hp = Math.min(p.maxHp, p.hp + 1);
-
           if (isDragon || f.hp <= 0) {
             food.splice(i, 1);
             food.push(spawnFood());
           }
-
           const currentAnimal = getAnimalByLevel(p.level);
           if (p.score >= currentAnimal.xpToNext && p.level < 6) {
             p.level += 1;
@@ -870,45 +879,28 @@ setInterval(() => {
       }
     }
 
+    // 🍖 МЯСО
     for (let i = meat.length - 1; i >= 0; i--) {
       const m = meat[i];
       if (m.hp <= 0) continue;
-
       const distToMeat = Math.hypot(p.x - m.x, p.y - m.y);
-
-      const hitDist = (p.level >= 6)
-        ? p.r + m.r * 0.6
-        : p.r * 0.9 + m.r * 0.7;
+      const hitDist = (p.level >= 6) ? p.r + m.r * 0.6 : p.r * 0.9 + m.r * 0.7;
 
       if (distToMeat < hitDist) {
         const now = Date.now();
         if (!p.lastFoodBite || now - p.lastFoodBite >= 300) {
           p.lastFoodBite = now;
-
           const isDragon = p.level >= 6;
-
-          if (isDragon) {
-            m.hp = 0;
-          } else {
-            m.hp -= 1;
-          }
-
+          if (isDragon) m.hp = 0; else m.hp -= 1;
           const nx = (m.x - p.x) / (distToMeat || 1);
           const ny = (m.y - p.y) / (distToMeat || 1);
-
           const power = isDragon ? 1.2 : 0.5;
-          m.vx += nx * power;
-          m.vy += ny * power;
-
+          m.vx += nx * power; m.vy += ny * power;
           const recoil = isDragon ? 0.3 : 1.2;
-          p.vx -= nx * recoil;
-          p.vy -= ny * recoil;
-
+          p.vx -= nx * recoil; p.vy -= ny * recoil;
           p.score += Math.ceil(m.xp / m.maxHp);
           p.hp = Math.min(p.maxHp, p.hp + 2);
-
           if (isDragon || m.hp <= 0) meat.splice(i, 1);
-
           const currentAnimal = getAnimalByLevel(p.level);
           if (p.score >= currentAnimal.xpToNext && p.level < 6) {
             p.level += 1;
@@ -921,6 +913,7 @@ setInterval(() => {
       }
     }
 
+    // 🎁 ПОДАРКИ
     for (let i = presents.length - 1; i >= 0; i--) {
       const pr = presents[i];
       if (Math.hypot(p.x - pr.x, p.y - pr.y) < p.r + pr.r) {
@@ -932,6 +925,7 @@ setInterval(() => {
     }
   }
 
+  // 💎 КРИСТАЛЛЫ — укус + аура
   for (const id in players) {
     if (!players[id]) continue;
     const p = players[id];
@@ -952,6 +946,16 @@ setInterval(() => {
             p.water = Math.min(p.maxWater, p.water + 20);
             p.score += 5;
           }
+
+          // ✨ Аура исцеления
+          if (c.isMega) {
+            p.auraColor = 'orange';
+            p.auraUntil = now + 2000;
+          } else {
+            p.auraColor = 'blue';
+            p.auraUntil = now + 1500;
+          }
+
           if (c.hp <= 0) {
             if (c.isMega) {
               const a = Math.random() * Math.PI * 2;
@@ -959,6 +963,7 @@ setInterval(() => {
               c.x = VOLCANO.x + Math.cos(a) * d;
               c.y = VOLCANO.y + Math.sin(a) * d;
               c.hp = c.maxHp; c.respawnAt = 0;
+              c.vx = 0; c.vy = 0;
               broadcast({ type: 'chat', system: true, text: `💎 ${p.name} СЪЕЛ МЕГА-КРИСТАЛЛ!` });
             } else {
               c.respawnAt = Date.now() + 15000;
@@ -978,6 +983,7 @@ setInterval(() => {
         c.x = VOLCANO.x + Math.cos(a) * d;
         c.y = VOLCANO.y + Math.sin(a) * d;
         c.hp = c.maxHp; c.respawnAt = 0;
+        c.vx = 0; c.vy = 0;
       } else {
         let x, y;
         do {
@@ -985,6 +991,7 @@ setInterval(() => {
           y = 200 + Math.random() * (WORLD.height - 400);
         } while (isInVolcano(x, y));
         c.x = x; c.y = y; c.hp = c.maxHp; c.respawnAt = 0;
+        c.vx = 0; c.vy = 0;
       }
     }
   }
@@ -1065,6 +1072,5 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log(`Сервер запущен: http://localhost:${PORT}`);
   console.log(`👑 Админ-пароль: ${ADMIN_PASSWORD}`);
   console.log(`🗺 Карта: ${WORLD.width}x${WORLD.height}`);
-  console.log(`🌋 Вулкан: центр (${VOLCANO.x}, ${VOLCANO.y}), радиус ${VOLCANO.r}`);
-  console.log(`🎮 Стрелки ↑ ↓ — смена уровня (для админа)`);
+  console.log(`💎 Кристаллы: толкаемые (тяжёлые)`);
 });
