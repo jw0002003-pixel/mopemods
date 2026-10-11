@@ -642,34 +642,6 @@ setInterval(() => {
       }
       continue;
     }
-
-    // 🕳 СОСТОЯНИЕ «В НОРЕ» — игрок двигается к краю норы (в сторону курсора)
-    if (p.holeState === 'inside') {
-      p.hidden = true;
-      p.x = p.holeTargetX;
-      p.y = p.holeTargetY;
-      p.vx = 0; p.vy = 0;
-
-      const dirX = p.moveDirX || 0;
-      const dirY = p.moveDirY || 0;
-      const dirDist = Math.hypot(dirX, dirY);
-
-      // 🎯 Поворот в сторону курсора (даже в норе)
-      if (dirDist > 0.01) {
-        const targetAngle = Math.atan2(dirY, dirX);
-        let diff = targetAngle - p.angle;
-        while (diff > Math.PI) diff -= Math.PI * 2;
-        while (diff < -Math.PI) diff += Math.PI * 2;
-        p.angle += diff * 0.25; // плавный поворот
-      }
-
-      // Если игрок двигает курсор — пытается выйти
-      if (dirDist > 0.15 && p.movePower > 0.1) {
-        p.holeState = 'exiting';
-      }
-      continue;
-    }
-
     // 🕳 СОСТОЯНИЕ «ВЫХОД» — плавно к краю норы, потом наружу
     if (p.holeState === 'exiting') {
       const dirX = p.moveDirX || 0;
