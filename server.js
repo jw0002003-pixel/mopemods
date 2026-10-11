@@ -612,6 +612,8 @@ setInterval(() => {
         p.holeState = 'inside';
         p.hidden = true;
         p.vx = 0; p.vy = 0;
+        // 🚫 Сброс интерполяции для устранения фриза
+        p.skipInterpolation = true;
       } else {
         p.x += (dx / dist) * step;
         p.y += (dy / dist) * step;
