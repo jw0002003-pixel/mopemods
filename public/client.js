@@ -191,6 +191,17 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
+// 🌊 Отпускаем W — всплываем
+document.addEventListener('keyup', (e) => {
+  if (e.key === 'w' || e.key === 'W' || e.key === 'ц') {
+    if (myId && players[myId] && gameStarted) {
+      const me = players[myId];
+      if (me.level >= 6 || me.isSanta) return;
+      ws.send(JSON.stringify({ type: 'diveRelease' }));
+    }
+  }
+});
+
 setInterval(() => {
   if (!gameStarted || !myId || !players[myId]) return;
   if (isMobile) return;
