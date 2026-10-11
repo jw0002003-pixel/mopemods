@@ -325,7 +325,49 @@ camera.y = focusY - viewH / 2;
     ctx.setLineDash([20, 15]);
     ctx.stroke();
     ctx.setLineDash([]);
-    ctx.font = 'bold 24px sans-serif';
+    // Анимация удара лапой (для медведя) — ОДНА ЛАПА, ЧЕРЕДОВАНИЕ
+const swingElapsed = Date.now() - (p.swingTime || 0);
+if (p.level === 5 && swingElapsed < 80) {
+  const PR = Math.max(0.1, Math.abs(p.r || 1));
+  const angle = p.renderAngle !== undefined ? p.renderAngle : (p.angle || 0);
+
+  // Мгновенное появление и исчезновение (80 мс)
+  const fade = 1 - swingElapsed / 80;
+
+  // Сторона: left или right (с сервера)
+  const side = p.nextPawSide || 'left';
+  const pawAngle = side === 'left' ? (angle - Math.PI / 3) : (angle + Math.PI / 3);
+  const reach = PR * 1.4;
+
+  ctx.globalAlpha = fade;
+
+  const pawX = x + Math.cos(pawAngle) * reach;
+  const pawY = y + Math.sin(pawAngle) * reach;
+
+  ctx.save();
+  ctx.translate(pawX, pawY);
+  ctx.rotate(pawAngle);
+
+  // Круг лапы
+  ctx.beginPath();
+  ctx.arc(0, 0, PR * 0.6, 0, Math.PI * 2);
+  ctx.fillStyle = '#6f4e37';
+  ctx.fill();
+  ctx.strokeStyle = '#3d2a1a';
+  ctx.lineWidth = 4;
+  ctx.stroke();
+
+  // Когти
+  for (let c = -1; c <= 1; c++) {
+    ctx.beginPath();
+    ctx.arc(PR * 0.4, c * PR * 0.3, PR * 0.12, 0, Math.PI * 2);
+    ctx.fillStyle = '#fff';
+    ctx.fill();
+  }
+  ctx.restore();
+
+  ctx.globalAlpha = 1;
+}
     ctx.textAlign = 'center';
     ctx.fillStyle = '#ffd700';
     ctx.fillText('⚔️ АРЕНА ⚔️', ax, ay - arena.r - 10);
