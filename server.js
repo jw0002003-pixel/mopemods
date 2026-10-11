@@ -41,6 +41,9 @@ function getBiomeAt(x, y) {
 
 // 🍓 Мягкое расталкивание игрока и еды
 function resolveFoodCollision(p, f) {
+  // 🐉 Дракон (6) и Король (7) ходят сквозь еду
+  if (p.level >= 6) return false;
+
   const dx = p.x - f.x;
   const dy = p.y - f.y;
   const dist = Math.hypot(dx, dy);
@@ -125,7 +128,8 @@ function spawnFood() {
     id: Math.random().toString(36).slice(2),
     x, y, r: type.r, color: type.color, type: type.name,
     emoji: type.emoji, xp: type.xp, minLevel: type.minLevel, biome: type.biome,
-    hp: type.bites, maxHp: type.bites, bites: type.bites
+    hp: type.bites, maxHp: type.bites, bites: type.bites,
+    vx: 0, vy: 0   // 🍓 скорость для плавного скольжения
   };
 }
 for (let i = 0; i < FOOD_COUNT; i++) food.push(spawnFood());
@@ -185,7 +189,7 @@ wss.on('connection', (ws) => {
     lastFoodBite: 0, lastCrystalBite: 0,
     lastVolcanoDamage: 0, lastSantaGift: 0, lastWaterDrink: 0,
     inHole: false, hidden: false, burning: 0, dead: false, underwater: false,
-swingActive: false, swingTime: 0, swingAngle: 0, stunned: 0, nextPawSide: 'left',
+    swingActive: false, swingTime: 0, swingAngle: 0, stunned: 0, nextPawSide: 'left',
     spectating: false, inArena: false,
     previousScore: 0,
     holeCooldown: 0,
@@ -261,7 +265,8 @@ swingActive: false, swingTime: 0, swingAngle: 0, stunned: 0, nextPawSide: 'left'
           id: Math.random().toString(36).slice(2),
           x: p.x + (Math.random() - 0.5) * 200,
           y: p.y + (Math.random() - 0.5) * 200,
-          r: 20, xp: 25 + Math.floor(Math.random() * 25)
+          r: 20, xp: 25 + Math.floor(Math.random() * 25),
+          vx: 0, vy: 0
         });
       }
       if (data.type === 'santa_speed' && players[id] && players[id].isSanta) {
@@ -514,7 +519,8 @@ setInterval(() => {
           xp: meatPerDrop,
           hp: 2, maxHp: 2,
           color: ['#8B0000', '#A52A2A', '#B22222', '#DC143C'][Math.floor(Math.random() * 4)],
-          emoji: '🍖'
+          emoji: '🍖',
+          vx: 0, vy: 0
         });
       }
 
@@ -592,7 +598,7 @@ setInterval(() => {
     p.x = Math.max(wallOffset, Math.min(WORLD.width - wallOffset, p.x));
     p.y = Math.max(wallOffset, Math.min(WORLD.height - wallOffset, p.y));
 
-    // 🍓 Мягкое столкновение с едой и мясом
+    // 🍓 Мягкое столкновение с едой и мясом (драконы — проходят сквозь)
     if (!p.hidden && !p.dead) {
       for (const f of food) {
         if (f.hp <= 0) continue;
@@ -622,6 +628,42 @@ setInterval(() => {
       p.angle += turnAmount;
     }
   }
+
+  // 🍓 ФИЗИКА ЕДЫ И МЯСА — плавное скольжение с затуханием
+  for (const f of food) {
+    if (f.hp <= 0) continue;
+    if (f.vx === undefined) { f.vx = 0; f.vy = 0; }
+    if (Math.abs(f.vx) > 0.05 || Math.abs(f.vy) > 0.05) {
+      f.x += f.vx;
+      f.y += f.vy;
+      f.vx *= 0.90;
+      f.vy *= 0.90;
+      const margin = f.r;
+      f.x = Math.max(margin, Math.min(WORLD.width - margin, f.x));
+      f.y = Math.max(margin, Math.min(WORLD.height - margin, f.y));
+    } else {
+      f.vx = 0;
+      f.vy = 0;
+    }
+  }
+
+  for (const m of meat) {
+    if (m.hp <= 0) continue;
+    if (m.vx === undefined) { m.vx = 0; m.vy = 0; }
+    if (Math.abs(m.vx) > 0.05 || Math.abs(m.vy) > 0.05) {
+      m.x += m.vx;
+      m.y += m.vy;
+      m.vx *= 0.90;
+      m.vy *= 0.90;
+      const margin = m.r;
+      m.x = Math.max(margin, Math.min(WORLD.width - margin, m.x));
+      m.y = Math.max(margin, Math.min(WORLD.height - margin, m.y));
+    } else {
+      m.vx = 0;
+      m.vy = 0;
+    }
+  }
+
   // Удаление временных нор
   for (let i = holes.length - 1; i >= 0; i--) {
     if (holes[i].temp && Date.now() > holes[i].expiresAt) {
@@ -693,38 +735,52 @@ setInterval(() => {
     const p = players[id];
     if (p.hidden || p.isSanta || p.dead) continue;
 
-    // 🍓 ЕДА — укус с отскоком
+    // 🍓 ЕДА — укус, еда плавно отлетает
     for (let i = food.length - 1; i >= 0; i--) {
       const f = food[i];
       if (f.hp <= 0) continue;
 
       const distToFood = Math.hypot(p.x - f.x, p.y - f.y);
-      if (distToFood < p.r * 0.9 + f.r * 0.7) {
+
+      const hitDist = (p.level >= 6)
+        ? p.r + f.r * 0.6
+        : p.r * 0.9 + f.r * 0.7;
+
+      if (distToFood < hitDist) {
         if (p.level < f.minLevel) continue;
 
         const now = Date.now();
         if (!p.lastFoodBite || now - p.lastFoodBite >= 350) {
           p.lastFoodBite = now;
 
-          f.hp -= 1;
+          const isDragon = p.level >= 6;
 
-          const nxx = (p.x - f.x) / (distToFood || 1);
-          const nyy = (p.y - f.y) / (distToFood || 1);
-          const recoil = 4 + p.r * 0.15;
-          p.vx -= nxx * recoil;
-          p.vy -= nyy * recoil;
-
-          const minDist = p.r * 0.9 + f.r * 0.7;
-          if (distToFood < minDist) {
-            const push = (minDist - distToFood);
-            p.x += nxx * push * 0.9;
-            p.y += nyy * push * 0.9;
+          // 🐉 Дракон и Король — съедают с одного укуса
+          if (isDragon) {
+            f.hp = 0;
+          } else {
+            f.hp -= 1;
           }
+
+          // 🐉 Сила толчка еды
+          const knockback = isDragon
+            ? 14 + p.r * 0.08
+            : 3 + p.r * 0.05;
+
+          const nx = (f.x - p.x) / (distToFood || 1);
+          const ny = (f.y - p.y) / (distToFood || 1);
+
+          f.vx = nx * knockback;
+          f.vy = ny * knockback;
+
+          const recoil = isDragon ? 0.5 + p.r * 0.01 : 2 + p.r * 0.06;
+          p.vx -= nx * recoil;
+          p.vy -= ny * recoil;
 
           p.score += f.xp || 1;
           p.hp = Math.min(p.maxHp, p.hp + 1);
 
-          if (f.hp <= 0) {
+          if (isDragon || f.hp <= 0) {
             food.splice(i, 1);
             food.push(spawnFood());
           }
@@ -741,35 +797,48 @@ setInterval(() => {
       }
     }
 
-    // 🍖 МЯСО — укус с отскоком
+    // 🍖 МЯСО — укус, мясо плавно отлетает
     for (let i = meat.length - 1; i >= 0; i--) {
       const m = meat[i];
       if (m.hp <= 0) continue;
 
       const distToMeat = Math.hypot(p.x - m.x, p.y - m.y);
-      if (distToMeat < p.r * 0.9 + m.r * 0.7) {
+
+      const hitDist = (p.level >= 6)
+        ? p.r + m.r * 0.6
+        : p.r * 0.9 + m.r * 0.7;
+
+      if (distToMeat < hitDist) {
         const now = Date.now();
         if (!p.lastFoodBite || now - p.lastFoodBite >= 300) {
           p.lastFoodBite = now;
 
-          m.hp -= 1;
+          const isDragon = p.level >= 6;
 
-          const nxx = (p.x - m.x) / (distToMeat || 1);
-          const nyy = (p.y - m.y) / (distToMeat || 1);
-          const recoil = 4 + p.r * 0.15;
-          p.vx -= nxx * recoil;
-          p.vy -= nyy * recoil;
-
-          const minDist = p.r * 0.9 + m.r * 0.7;
-          if (distToMeat < minDist) {
-            const push = (minDist - distToMeat);
-            p.x += nxx * push * 0.9;
-            p.y += nyy * push * 0.9;
+          if (isDragon) {
+            m.hp = 0;
+          } else {
+            m.hp -= 1;
           }
+
+          const knockback = isDragon
+            ? 14 + p.r * 0.08
+            : 3 + p.r * 0.05;
+
+          const nx = (m.x - p.x) / (distToMeat || 1);
+          const ny = (m.y - p.y) / (distToMeat || 1);
+
+          m.vx = nx * knockback;
+          m.vy = ny * knockback;
+
+          const recoil = isDragon ? 0.5 + p.r * 0.01 : 2 + p.r * 0.06;
+          p.vx -= nx * recoil;
+          p.vy -= ny * recoil;
 
           p.score += Math.ceil(m.xp / m.maxHp);
           p.hp = Math.min(p.maxHp, p.hp + 2);
-          if (m.hp <= 0) meat.splice(i, 1);
+
+          if (isDragon || m.hp <= 0) meat.splice(i, 1);
 
           const currentAnimal = getAnimalByLevel(p.level);
           if (p.score >= currentAnimal.xpToNext && p.level < 6) {
