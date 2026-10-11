@@ -14,7 +14,7 @@ module.exports = {
       if (players[player.id]) {
         players[player.id].swingActive = false;
       }
-    }, 150);
+    }, 80);
 
     // Урон — только в полукруг спереди (радиус 150, угол ±60°)
     const hitRange = 150;
