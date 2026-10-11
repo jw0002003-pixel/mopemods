@@ -230,7 +230,8 @@ wss.on('connection', (ws) => {
     lastFoodBite: 0, lastCrystalBite: 0,
     auraColor: null, auraUntil: 0,
     lastVolcanoDamage: 0, lastSantaGift: 0, lastWaterDrink: 0,
-    inHole: false, hidden: false, burning: 0, dead: false, underwater: false,
+    inHole: false, hidden: false, burning: 0, dead: false,
+    underwater: false,
     swingActive: false, swingTime: 0, swingAngle: 0, stunned: 0, nextPawSide: 'left',
     spectating: false, inArena: false,
     previousScore: 0,
@@ -263,6 +264,16 @@ wss.on('connection', (ws) => {
           p.targetY = data.y;
           p.moveDirX = null;
         }
+      }
+      if (data.type === 'dive' && players[id]) {
+        const p = players[id];
+        if (p.dead) return;
+        if (p.level >= 6) return;
+        if (p.isSanta) return;
+        const biome = getBiomeAt(p.x, p.y);
+        if (biome.name !== 'water' && biome.name !== 'river') return;
+        // Ныряем — переключаем underwater
+        p.underwater = !p.underwater;
       }
       if (data.type === 'boost' && players[id]) {
         const p = players[id];
@@ -444,6 +455,7 @@ wss.on('connection', (ws) => {
         p.dashVx = 0; p.dashVy = 0;
         p.eatenLevels = [];
         p.dragonsKilled = 0;
+        p.underwater = false;
       }
       if (data.type === 'respawn' && players[id]) {
         const p = players[id];
@@ -460,6 +472,7 @@ wss.on('connection', (ws) => {
         p.holeState = 'outside';
         p.vx = 0; p.vy = 0;
         p.dashVx = 0; p.dashVy = 0;
+        p.underwater = false;
         const biome = BIOMES[Math.floor(Math.random() * BIOMES.length)];
         p.x = biome.x + Math.random() * biome.w;
         p.y = biome.y + Math.random() * biome.h;
@@ -541,6 +554,28 @@ setInterval(() => {
 
     if (p.hidden) p.hp = Math.min(p.maxHp, p.hp + 2);
     else if (p.hp < p.maxHp) p.hp = Math.min(p.maxHp, p.hp + 0.3);
+
+    // 🌊 Логика кислорода
+    const currentBiomeDive = getBiomeAt(p.x, p.y);
+    const inWater = currentBiomeDive.name === 'water' || currentBiomeDive.name === 'river';
+
+    if (p.underwater && !inWater) {
+      // Вышел из воды — всплываем
+      p.underwater = false;
+    }
+
+    if (p.underwater) {
+      // Под водой — тратим кислород
+      p.air -= 100 / (5 * TICK_RATE); // 5 секунд до нуля
+      if (p.air <= 0) {
+        p.air = 0;
+        p.underwater = false; // Авто-всплытие
+      }
+    } else {
+      // На поверхности — восстанавливаем кислород
+      p.air = Math.min(p.maxAir, p.air + 100 / (2 * TICK_RATE)); // 2 секунды до полного
+    }
+    p.air = Math.max(0, Math.min(p.maxAir, p.air));
 
     if (p.level >= 6 || p.isSanta) {
       p.water = p.maxWater;
@@ -1139,5 +1174,5 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log(`Сервер запущен: http://localhost:${PORT}`);
   console.log(`👑 Админ-пароль: ${ADMIN_PASSWORD}`);
   console.log(`🗺 Карта: ${WORLD.width}x${WORLD.height}`);
-  console.log(`🕳 Механика норы: плавный вход, плавный выход`);
+  console.log(`🌊 Ныряние на W (уровни 1-5)`);
 });
