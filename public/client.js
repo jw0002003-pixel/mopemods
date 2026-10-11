@@ -98,6 +98,15 @@ ws.onmessage = (event) => {
         if (me.level >= 6) waterFill.style.background = 'linear-gradient(90deg, #8b0000, #ff4500, #ff9500)';
         else if (waterPercent < 30) waterFill.style.background = 'linear-gradient(90deg, #8b0000, #ff0000, #ff6666)';
         else waterFill.style.background = 'linear-gradient(90deg, #0077b6, #00b4d8, #90e0ef)';
+        
+        // 🌊 Воздух
+        const airPercent = Math.max(0, (me.air / me.maxAir) * 100);
+        airFill.style.width = airPercent + '%';
+        if (airPercent < 30) {
+          airFill.style.background = 'linear-gradient(90deg, #8b0000, #ff0000, #ff6666)';
+        } else {
+          airFill.style.background = 'linear-gradient(90deg, #0099ff, #66ccff, #99ddff)';
+        }
       }
     }
   }
