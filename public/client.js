@@ -270,12 +270,12 @@ function draw() {
   const dt = Math.min(50, nowMs - (window._lastDraw || nowMs)) / 1000;
   window._lastDraw = nowMs;
 
-    for (const id in players) {
+  for (const id in players) {
     const p = players[id];
     if (!p || p.dead) continue;
 
-    // 🚫 Сброс интерполяции — если сервер пометил skipInterpolation
-    if (p.skipInterpolation || p.skipInterpolationFrames > 0) {
+    // 🚫 Сброс интерполяции — если сервер пометил skipInterpolation ИЛИ игрок входит в нору
+    if (p.skipInterpolation || p.skipInterpolationFrames > 0 || p.holeState === 'entering') {
       p.renderX = p.x;
       p.renderY = p.y;
       p.renderAngle = p.angle || 0;
@@ -539,14 +539,12 @@ function draw() {
         else drawSkin(ctx, x, y, hiddenSize, p.level, p.renderAngle !== undefined ? p.renderAngle : p.angle);
         ctx.globalAlpha = 1;
       } else {
-        // Чужие игроки в норе — почти невидимы
         ctx.globalAlpha = 0.35;
         const hiddenSize = p.level === 7 ? p.r * 4.0 : p.r * 2.6;
         if (p.isSanta) drawSkin(ctx, x, y, hiddenSize, 'santa', p.renderAngle !== undefined ? p.renderAngle : p.angle);
         else drawSkin(ctx, x, y, hiddenSize, p.level, p.renderAngle !== undefined ? p.renderAngle : p.angle);
         ctx.globalAlpha = 1;
       }
-      // HP над игроком в норе (для себя)
       if (p.id == myId && p.hp !== undefined && p.maxHp !== undefined) {
         const barWidth = p.r * 2, barHeight = 5;
         const barX = x - barWidth / 2, barY = y - p.r - 18;
