@@ -4,8 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
   <title>Mope Clone</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎮</text></svg>">
   <style>
-    /* === ЦВЕТА ТЕМЫ (меняются через JS) === */
     :root {
       --bg-color: #1a2a3a;
       --menu-bg: rgba(20, 35, 55, 0.95);
@@ -23,7 +23,6 @@
     #leaderboard { position: fixed; top: 10px; right: 10px; color: #fff; font-size: 16px; text-shadow: 0 0 4px #000; text-align: right; pointer-events: none; z-index: 5; }
     #minimap { position: fixed; bottom: 90px; right: 10px; border: 2px solid #fff; background: rgba(0,0,0,0.5); z-index: 5; }
 
-    /* === НОВОЕ МЕНЮ === */
     #menu {
       position: fixed; top: 0; left: 0;
       width: 100%; height: 100%;
@@ -37,7 +36,6 @@
       box-sizing: border-box;
     }
 
-    /* Верхний заголовок */
     .menu-title {
       color: #ffffff;
       font-size: 42px;
@@ -47,7 +45,6 @@
       letter-spacing: 2px;
     }
 
-    /* Поле ника */
     .nickname-label {
       color: #ffffff;
       font-size: 18px;
@@ -75,7 +72,6 @@
       box-shadow: 0 0 12px rgba(100, 200, 255, 0.6);
     }
 
-    /* Контейнер для Play + Шестерёнка */
     .play-row {
       display: flex;
       gap: 12px;
@@ -83,7 +79,6 @@
       margin-bottom: 30px;
     }
 
-    /* Кнопка Play */
     #startBtn {
       padding: 18px 70px;
       font-size: 28px;
@@ -103,7 +98,6 @@
     }
     #startBtn:active { transform: scale(0.98); }
 
-    /* Кнопка настроек (синяя шестерёнка) */
     #settingsBtn {
       width: 60px;
       height: 60px;
@@ -125,7 +119,6 @@
       box-shadow: 0 6px 20px rgba(33, 150, 243, 0.6);
     }
 
-    /* === ПАНЕЛЬ НАСТРОЕК === */
     #settings-panel {
       position: fixed; top: 0; left: 0;
       width: 100%; height: 100%;
@@ -155,9 +148,7 @@
       font-weight: bold;
     }
 
-    .settings-group {
-      margin-bottom: 22px;
-    }
+    .settings-group { margin-bottom: 22px; }
 
     .settings-label {
       color: #ffffff;
@@ -166,11 +157,7 @@
       font-weight: bold;
     }
 
-    /* Кнопки темы */
-    .theme-buttons {
-      display: flex;
-      gap: 10px;
-    }
+    .theme-buttons { display: flex; gap: 10px; }
     .theme-buttons button {
       flex: 1;
       padding: 12px;
@@ -188,11 +175,8 @@
       border-color: #64b5f6;
       box-shadow: 0 0 15px rgba(33, 150, 243, 0.7);
     }
-    .theme-buttons button:hover {
-      background: rgba(33, 150, 243, 0.4);
-    }
+    .theme-buttons button:hover { background: rgba(33, 150, 243, 0.4); }
 
-    /* Палитра цветов */
     .color-palette {
       display: flex;
       gap: 10px;
@@ -207,21 +191,14 @@
       cursor: pointer;
       transition: all 0.2s;
     }
-    .color-swatch:hover {
-      transform: scale(1.15);
-    }
+    .color-swatch:hover { transform: scale(1.15); }
     .color-swatch.active {
       border-color: #ffffff;
       box-shadow: 0 0 15px rgba(255, 255, 255, 0.9);
       transform: scale(1.1);
     }
 
-    /* Кнопки внизу панели */
-    .settings-actions {
-      display: flex;
-      gap: 12px;
-      margin-top: 25px;
-    }
+    .settings-actions { display: flex; gap: 12px; margin-top: 25px; }
     .settings-actions button {
       flex: 1;
       padding: 14px;
@@ -233,17 +210,11 @@
       color: #ffffff;
       transition: all 0.2s;
     }
-    #applySettings {
-      background: #4CAF50;
-    }
+    #applySettings { background: #4CAF50; }
     #applySettings:hover { background: #45a049; }
-
-    #resetSettings {
-      background: #f44336;
-    }
+    #resetSettings { background: #f44336; }
     #resetSettings:hover { background: #d32f2f; }
 
-    /* === ЧАТ === */
     #chat-input {
       position: fixed; bottom: 90px; left: 50%; transform: translateX(-50%);
       width: 500px; max-width: 90vw;
@@ -259,7 +230,6 @@
       box-sizing: border-box;
     }
 
-    /* === НИЖНЯЯ ПАНЕЛЬ === */
     #bottom-bar {
       position: fixed; bottom: 0; left: 0;
       width: 100%; height: 92px;
@@ -308,7 +278,6 @@
       font-weight: bold;
     }
 
-    /* === МОБИЛЬНОЕ УПРАВЛЕНИЕ === */
     #joystick {
       position: fixed;
       bottom: 20px;
@@ -362,7 +331,6 @@
     #btn-boost { background: rgba(255, 220, 0, 0.55); }
     #btn-drink { background: rgba(0, 150, 255, 0.55); }
 
-    /* === АДАПТИВ === */
     @media (max-width: 700px) {
       .menu-title { font-size: 28px; }
       #name-input { font-size: 18px; padding: 12px 18px; width: 80vw; }
@@ -394,7 +362,6 @@
 
   <input id="chat-input" type="text" maxlength="80" placeholder="Введи сообщение и нажми Enter..." style="display:none;" />
 
-  <!-- === МЕНЮ === -->
   <div id="menu">
     <div class="menu-title">🎮 MOPE CLONE</div>
 
@@ -407,12 +374,10 @@
     </div>
   </div>
 
-  <!-- === ПАНЕЛЬ НАСТРОЕК === -->
   <div id="settings-panel">
     <div class="settings-content">
       <div class="settings-title">🎨 Настройки</div>
 
-      <!-- Тема -->
       <div class="settings-group">
         <div class="settings-label">🌙 Тема</div>
         <div class="theme-buttons">
@@ -421,7 +386,6 @@
         </div>
       </div>
 
-      <!-- Цвет фона -->
       <div class="settings-group">
         <div class="settings-label">🎨 Цвет фона</div>
         <div class="color-palette" id="bg-palette">
@@ -436,7 +400,6 @@
         </div>
       </div>
 
-      <!-- Кнопки -->
       <div class="settings-actions">
         <button id="applySettings">✓ Применить</button>
         <button id="resetSettings">↺ Сброс</button>
@@ -444,7 +407,6 @@
     </div>
   </div>
 
-  <!-- === МОБИЛЬНОЕ УПРАВЛЕНИЕ === -->
   <div id="joystick">
     <div id="joystick-base">
       <div id="joystick-stick"></div>
