@@ -153,6 +153,7 @@ let presents = [];
 let crystals = [];
 let meat = [];
 let ducks = [];
+let trees = [];
 let arena = { x: 3000, y: 2700, r: 500, active: false };
 let nextId = 1;
 
@@ -238,6 +239,14 @@ function spawnHole() {
   return { id: Math.random().toString(36).slice(2), x, y, r: 50 };
 }
 for (let i = 0; i < HOLE_COUNT; i++) holes.push(spawnHole());
+
+// деревья в лесу
+for (let i = 0; i < 120; i++) {
+  const bx = 1000 + Math.random() * 4000;
+  const by = 1800 + Math.random() * 1800;
+  if (isInVolcano(bx, by)) continue;
+  trees.push({ x: bx, y: by, r: 30 + Math.random() * 20 });
+}
 
 wss.on('connection', (ws) => {
   const id = nextId++;
@@ -607,10 +616,257 @@ setInterval(() => {
     }
   }
 
+  // 🐾 ИГРОКИ
   for (const id in players) {
     if (!players[id]) continue;
     const p = players[id];
     if (p.dead) continue;
 
     const inDuckNow = isInDuckIsland(p.x, p.y);
-    if (inDuckNow && !p.inDuckIsland)
+    if (inDuckNow && !p.inDuckIsland) {
+      p.inDuckIsland = true;
+      wss.clients.forEach((c) => {
+        if (c.readyState === WebSocket.OPEN) {
+          c.send(JSON.stringify({ type: 'duck_enter' }));
+        }
+      });
+    } else if (!inDuckNow && p.inDuckIsland) {
+      p.inDuckIsland = false;
+    }
+
+    // движение
+    if (!p.dead && !p.hidden) {
+      let dx = 0, dy = 0, speed = 1;
+      if (p.moveDirX !== null && p.moveDirX !== undefined && (p.moveDirX !== 0 || p.moveDirY !== 0)) {
+        dx = p.moveDirX;
+        dy = p.moveDirY;
+        speed = 5 * (p.movePower || 1);
+      } else {
+        dx = p.targetX - p.x;
+        dy = p.targetY - p.y;
+        const d = Math.hypot(dx, dy);
+        if (d > 5) { dx /= d; dy /= d; speed = 5; } else { dx = 0; dy = 0; }
+      }
+
+      if (p.isSanta) speed = p.santaSpeed * 8;
+
+      // под водой медленнее
+      if (p.underwater) speed *= 0.6;
+
+      p.vx += dx * speed * 0.3;
+      p.vy += dy * speed * 0.3;
+
+      // даш
+      p.x += p.dashVx;
+      p.y += p.dashVy;
+      p.dashVx *= 0.85;
+      p.dashVy *= 0.85;
+      if (Math.abs(p.dashVx) < 0.01) p.dashVx = 0;
+      if (Math.abs(p.dashVy) < 0.01) p.dashVy = 0;
+
+      // трение
+      p.vx *= 0.85;
+      p.vy *= 0.85;
+
+      p.x += p.vx;
+      p.y += p.vy;
+
+      // границы
+      if (p.x < p.r) { p.x = p.r; p.vx = 0; }
+      if (p.x > WORLD.width - p.r) { p.x = WORLD.width - p.r; p.vx = 0; }
+      if (p.y < p.r) { p.y = p.r; p.vy = 0; }
+      if (p.y > WORLD.height - p.r) { p.y = WORLD.height - p.r; p.vy = 0; }
+
+      if (Math.hypot(p.vx, p.vy) > 0.1) {
+        p.angle = Math.atan2(p.vy, p.vx);
+      }
+    }
+
+    // биом
+    p.biome = getBiomeAt(p.x, p.y).name;
+
+    // вода в океане
+    if (p.biome === 'water' || p.biome === 'river' || p.biome === 'duck') {
+      if (!p.underwater) {
+        p.water = Math.min(p.maxWater, p.water + 0.1);
+      }
+    } else {
+      p.water = Math.max(0, p.water - 0.03);
+    }
+
+    // воздух под водой
+    if (p.underwater) {
+      p.air = Math.max(0, p.air - 0.3);
+      if (p.air <= 0) {
+        p.hp -= 0.5;
+        if (p.hp <= 0 && !p.dead) {
+          p.dead = true;
+          broadcast({ type: 'chat', system: true, text: `💀 ${p.name} утонул` });
+        }
+      }
+    } else {
+      p.air = Math.min(p.maxAir, p.air + 0.5);
+    }
+
+    // вулкан
+    if (isInVolcano(p.x, p.y) && p.level < 6 && !p.isSanta) {
+      const now = Date.now();
+      if (now - (p.lastVolcanoDamage || 0) > 500) {
+        p.lastVolcanoDamage = now;
+        p.hp -= 5;
+        if (p.hp <= 0 && !p.dead) {
+          p.dead = true;
+          broadcast({ type: 'chat', system: true, text: `🔥 ${p.name} сгорел в вулкане` });
+        }
+      }
+    }
+
+    // еда
+    for (const f of food) {
+      if (f.hp <= 0) continue;
+      if (p.level >= 6) continue;
+
+      const d = Math.hypot(p.x - f.x, p.y - f.y);
+      if (d < p.r + f.r * 0.7) {
+        const now = Date.now();
+        if (now - (p.lastFoodBite || 0) < 200) continue;
+        p.lastFoodBite = now;
+        f.hp--;
+        p.score += f.xp;
+        if (f.hp <= 0) {
+          f.hp = 0;
+          f.respawnAt = Date.now() + 5000;
+        }
+        checkLevelUp(p);
+      }
+    }
+
+    // респавн еды
+    for (let i = 0; i < food.length; i++) {
+      if (food[i].hp <= 0 && food[i].respawnAt && Date.now() > food[i].respawnAt) {
+        food[i] = spawnFood();
+      }
+    }
+
+    // кристаллы
+    for (const c of crystals) {
+      if (c.hp <= 0) continue;
+      if (p.level >= 6) continue;
+      const d = Math.hypot(p.x - c.x, p.y - c.y);
+      if (d < p.r + c.r * 0.7) {
+        const now = Date.now();
+        if (now - (p.lastCrystalBite || 0) < 300) continue;
+        p.lastCrystalBite = now;
+        c.hp -= p.damage;
+        p.score += c.isMega ? 30 : 10;
+        checkLevelUp(p);
+        if (c.hp <= 0) {
+          c.respawnAt = Date.now() + 15000;
+        }
+      }
+    }
+
+    // респавн кристаллов
+    for (let i = 0; i < crystals.length; i++) {
+      const c = crystals[i];
+      if (c.hp <= 0 && c.respawnAt && Date.now() > c.respawnAt) {
+        if (c.isMega) crystals[i] = spawnMegaCrystal();
+        else crystals[i] = spawnCrystal();
+      }
+    }
+  }
+
+  // огненные шары
+  for (let i = fireballs.length - 1; i >= 0; i--) {
+    const fb = fireballs[i];
+    fb.x += fb.vx;
+    fb.y += fb.vy;
+    fb.life--;
+    if (fb.life <= 0) { fireballs.splice(i, 1); continue; }
+
+    for (const id in players) {
+      const p = players[id];
+      if (p.dead || id == fb.owner) continue;
+      if (Math.hypot(p.x - fb.x, p.y - fb.y) < p.r + fb.r) {
+        p.hp -= fb.damage;
+        if (p.hp <= 0 && !p.dead) {
+          p.dead = true;
+          broadcast({ type: 'chat', system: true, text: `🔥 ${p.name} убит огнём` });
+        }
+        fireballs.splice(i, 1);
+        break;
+      }
+    }
+  }
+
+  // отправка состояния
+  if (tickCount % 1 === 0) {
+    const fastState = {
+      type: 'state_fast',
+      players: {},
+      fireballs: fireballs.map(f => ({ id: f.id, x: f.x, y: f.y, r: f.r })),
+      ducks: ducks.map(d => ({ id: d.id, x: d.x, y: d.y, r: d.r, angle: d.angle, hp: d.hp, color: '#ffffff', belly: '#e0e0e0', head: '#2d5a27', beak: '#ffa500' }))
+    };
+    for (const id in players) {
+      const p = players[id];
+      fastState.players[id] = {
+        id: p.id, name: p.name,
+        x: p.x, y: p.y, angle: p.angle, r: p.r,
+        color: p.color, level: p.level,
+        score: p.score, hp: p.hp, maxHp: p.maxHp,
+        water: p.water, maxWater: p.maxWater,
+        air: p.air, maxAir: p.maxAir,
+        dead: p.dead, hidden: p.hidden,
+        underwater: p.underwater,
+        isAdmin: p.isAdmin, isSanta: p.isSanta,
+        chatText: p.chatText, chatTime: p.chatTime,
+        holeState: p.holeState,
+        auraColor: p.auraColor, auraUntil: p.auraUntil,
+        swingActive: p.swingActive, swingTime: p.swingTime,
+        nextPawSide: p.nextPawSide,
+        dragonsKilled: p.dragonsKilled,
+        renderX: p.renderX, renderY: p.renderY, renderAngle: p.renderAngle,
+        skipInterpolationFrames: p.skipInterpolationFrames
+      };
+    }
+    broadcast(fastState);
+  }
+
+  if (tickCount % 6 === 0) {
+    const slowState = {
+      type: 'state_slow',
+      food: food.filter(f => f.hp > 0),
+      holes,
+      biomes: BIOMES,
+      presents,
+      crystals: crystals.filter(c => c.hp > 0),
+      meat,
+      trees,
+      volcano: VOLCANO,
+      arena,
+      duckIsland: DUCK_ISLAND,
+      duckPond: DUCK_POND
+    };
+    broadcast(slowState);
+  }
+}, 1000 / TICK_RATE);
+
+function checkLevelUp(p) {
+  if (p.isSanta) return;
+  const thresholds = [10, 25, 50, 100, 200, 400];
+  for (let i = 0; i < thresholds.length; i++) {
+    if (p.score >= thresholds[i] && p.level === i + 1) {
+      p.level = i + 2;
+      const a = ANIMALS[p.level - 1];
+      p.r = a.r; p.color = a.color;
+      p.hp = a.hp; p.maxHp = a.hp; p.damage = a.damage;
+      broadcast({ type: 'chat', system: true, text: `⬆️ ${p.name} стал ${a.name} (${p.level} ур.)` });
+      break;
+    }
+  }
+}
+
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => {
+  console.log(`🎮 Сервер запущен на порту ${PORT}`);
+});
