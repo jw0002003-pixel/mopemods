@@ -52,13 +52,25 @@ let chatOpen = false;
 
 // === 🎵 Web Audio для КРЯ ===
 let audioCtx = null;
+let audioUnlocked = false;
+
 function initAudio() {
   if (!audioCtx) {
     try {
       audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     } catch (e) {}
   }
+  // 🔓 Разблокировка после первого клика
+  if (audioCtx && audioCtx.state === 'suspended') {
+    audioCtx.resume();
+  }
+  audioUnlocked = true;
 }
+
+// 🔓 Разблокировка при первом клике / тапе / клавише
+window.addEventListener('click', initAudio, { once: true });
+window.addEventListener('touchstart', initAudio, { once: true });
+window.addEventListener('keydown', initAudio, { once: true });
 function playQuack(pitch = 1) {
   initAudio();
   if (!audioCtx) return;
